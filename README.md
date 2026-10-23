@@ -3,10 +3,13 @@
 A plugin for preventing accidental playback, seeking, playlist, and queue changes
 while keeping fooyin's playlist and library browsing usable.
 
-**Current status: lifecycle and recovery infrastructure.** The plugin provides a
-session toggle, transition/rollback coordinator, and durable recovery protocol.
-Protection guards are planned in [tickets 004–011](.plan/INDEX.md); toggling this
-development version does not yet protect playback, playlists, or input.
+**Current status: registered-action protection.** The session toggle now suppresses
+audited transport, seek, playback-order, queue and playlist-edit commands, including
+their registered shortcuts and underlying actions. Unlock restores current
+host-controlled action state. See the [command inventory](docs/registered-actions.md).
+Direct widget gestures, playlist content locks, and browsing side-effect guards
+are planned in [tickets 005–011](.plan/INDEX.md); this development version is not yet
+a complete session lock.
 The approved scope is recorded in the
 [behavior contract](.plan/001-decide-lock-policy.md#approved-behavior-contract).
 
@@ -86,7 +89,8 @@ The smoke runner creates a disposable HOME/XDG profile, uses Qt's offscreen
 platform, loads the actual plugin and a separate test driver, reaches the host
 event loop, waits for playlists to populate, and exits through normal application
 shutdown while locked. It verifies core/GUI initialisation, registered-proxy
-lock/unlock/relock transitions, and one clean plugin teardown.
+lock/unlock/relock transitions, protected proxy/source actions, host refreshes,
+late registration, current-state restoration, and one clean plugin teardown.
 It does not need an audio device or
 a display server. The lifecycle test separately exercises actual `QPluginLoader`
 unload with Qt's default unload-prevention hint cleared.
@@ -107,6 +111,7 @@ Debug lifecycle messages are available with
 
 - [Implementation tickets](.plan/INDEX.md) and [research findings](FINDINGS.md)
 - [Runtime ownership and test extension points](docs/architecture.md)
+- [Protected commands and remaining direct-call routes](docs/registered-actions.md)
 - [Build and runtime verification evidence](docs/verification.md)
 
 Keep project includes restricted to fooyin's installed public headers. Add focused

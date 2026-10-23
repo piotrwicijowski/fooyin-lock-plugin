@@ -9,6 +9,11 @@ target_link_libraries(lock_coordinator_test PRIVATE LockRuntime Qt6::Test)
 add_test(NAME lock.coordinator COMMAND lock_coordinator_test)
 set_tests_properties(lock.coordinator PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
 
+add_executable(lock_action_test actionguardtest.cpp)
+target_link_libraries(lock_action_test PRIVATE LockRuntime Qt6::Test)
+add_test(NAME lock.actions COMMAND lock_action_test)
+set_tests_properties(lock.actions PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
 # A separate, opt-in driver closes the real host via QApplication::quit().
 # It is never part of the installed production plugin.
 add_subdirectory(hostdriver)

@@ -4,4 +4,5 @@
 __pycache__/
 .plan/
 FINDINGS.md
-docs/
+docs/*
+!docs/registered-actions.md

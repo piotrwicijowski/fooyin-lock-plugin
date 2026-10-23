@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "lockruntime.h"
 
+#include "actionguard.h"
 #include "lockcoordinator.h"
 
 #include <core/player/playercontroller.h>
@@ -71,6 +72,7 @@ bool LockRuntime::initialiseGui(const GuiPluginContext& context)
     m_services.trackSelection  = context.trackSelection;
     m_services.currentPlaylist = context.playlistSelection;
     m_guiInitialised           = true;
+    m_coordinator->addGuard(std::make_unique<ActionGuard>(m_services.actions));
     if(m_services.actions) {
         m_toggle = new QAction{this};
         m_toggle->setObjectName(QString::fromLatin1(ToggleActionId));

@@ -54,6 +54,7 @@ def main():
             "fy.sessionlock: Core services acquired",
             "fy.sessionlock: GUI services acquired",
             "Session Lock smoke: host event loop reached",
+            "Session Lock smoke: protected proxies/sources, refresh, late registration, and host-state restoration verified",
             "Session Lock smoke: registered toggle locked, unlocked, and relocked for shutdown",
             "fy.sessionlock: Shutdown complete",
         )
