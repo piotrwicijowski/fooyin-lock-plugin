@@ -1,0 +1,8 @@
+{
+    "Name": "Session Lock Smoke Driver",
+    "Version": "@PROJECT_VERSION@",
+    "Author": "fooyin-lock-plugin-tests",
+    "Category": "Testing",
+    "Description": "Opt-in real-host lifecycle test driver",
+    "License": "GPL-3.0-or-later"
+}

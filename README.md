@@ -1,0 +1,119 @@
+# fooyin Session Lock plugin
+
+A plugin for preventing accidental playback, seeking, playlist, and queue changes
+while keeping fooyin's playlist and library browsing usable.
+
+**Current status: lifecycle and recovery infrastructure.** The plugin provides a
+session toggle, transition/rollback coordinator, and durable recovery protocol.
+Protection guards are planned in [tickets 004–011](.plan/INDEX.md); toggling this
+development version does not yet protect playback, playlists, or input.
+The approved scope is recorded in the
+[behavior contract](.plan/001-decide-lock-policy.md#approved-behavior-contract).
+
+## Requirements
+
+- Linux with a C++23 compiler and CMake 3.19 or newer; Ninja is used below.
+- Qt 6.4 or newer: Core, Widgets, Sql, Concurrent, and Network development modules.
+  Qt Test is additionally required when `BUILD_TESTING=ON` (the default).
+- An **installed fooyin SDK and matching runtime**, including `FooyinConfig.cmake`,
+  public headers, and Core/Gui/Utils shared libraries. Configure fooyin with
+  `INSTALL_HEADERS=ON` to produce the SDK. The plugin does not fall back to source
+  or private headers.
+- Python 3.8 or newer for the optional real-host smoke test, plus fooyin's Qt SQLite
+  driver and other runtime dependencies.
+
+The initial target is fooyin commit
+`bb8d9f0371b254571fffec310dce3ee1ce005c87` (0.13.1). Use the same Qt/compiler ABI
+for the host and plugin. See [verification evidence](docs/verification.md) for the
+actual toolchain and commands used; a release compatibility range is not yet
+established.
+
+## Build and install
+
+With the SDK installed in `/path/to/fooyin-sdk`, from this repository:
+
+```sh
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_PREFIX_PATH=/path/to/fooyin-sdk \
+  -DCMAKE_INSTALL_PREFIX="$HOME/.local" \
+  -DBUILD_TESTING=ON
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure
+cmake --install build
+```
+
+The standard Linux install produces
+`$HOME/.local/lib/fooyin/plugins/fyplugin_lock.so`, which fooyin discovers on its
+next startup. The plugin is listed as **Session Lock** in fooyin's plugin settings
+(identifier `fooyin-lock-plugin.sessionlock`).
+
+`LOCK_PLUGIN_INSTALL_DIR` overrides the prefix-relative plugin destination if
+needed. The test driver and test executables are never installed. Build-only
+deployments can use `FOOYIN_PLUGIN_PATH=/absolute/path/to/build` when launching the
+matching fooyin runtime. For staged installs, point it at the staged plugin
+directory instead. The installed module uses the host's library layout and keeps
+external SDK library search paths where needed.
+
+To build only the production plugin, configure with `-DBUILD_TESTING=OFF`.
+
+## Session control
+
+Open **Playback → Session Lock** to toggle the runtime session state. The menu text
+shows **Unlocked**, transition/recovery status, or **Locked**; only a successfully
+completed lock transition is checked. Activate the same action to unlock. Assign
+a shortcut in fooyin's shortcut settings if desired; there is no default binding.
+
+The session starts unlocked after startup recovery. Future guards use the durable
+`session-lock-recovery.json` journal in fooyin's state directory to restore their
+temporary persistent changes after interruption. If recovery is unresolved, the
+menu shows **Recovery required — Retry** with details in its status/tooltip text
+and the application log. Activating it retries recovery before allowing a new
+lock. Concrete playlist/settings recovery adapters arrive with their guards.
+
+## Real-host smoke test
+
+Enable the additional CTest entry by configuring with a matching host executable:
+
+```sh
+cmake -S . -B build \
+  -DLOCK_FOOYIN_EXECUTABLE=/path/to/fooyin-sdk/bin/fooyin
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure
+```
+
+The smoke runner creates a disposable HOME/XDG profile, uses Qt's offscreen
+platform, loads the actual plugin and a separate test driver, reaches the host
+event loop, waits for playlists to populate, and exits through normal application
+shutdown while locked. It verifies core/GUI initialisation, registered-proxy
+lock/unlock/relock transitions, and one clean plugin teardown.
+It does not need an audio device or
+a display server. The lifecycle test separately exercises actual `QPluginLoader`
+unload with Qt's default unload-prevention hint cleared.
+
+To verify the **installed** artifact explicitly:
+
+```sh
+python3 tests/host-smoke.py \
+  --host /path/to/fooyin-sdk/bin/fooyin \
+  --plugin "$HOME/.local/lib/fooyin/plugins/fyplugin_lock.so" \
+  --driver build/tests/hostdriver/fyplugin_locksmokedriver.so
+```
+
+Debug lifecycle messages are available with
+`QT_LOGGING_RULES='fy.sessionlock.debug=true'`.
+
+## Development
+
+- [Implementation tickets](.plan/INDEX.md) and [research findings](FINDINGS.md)
+- [Runtime ownership and test extension points](docs/architecture.md)
+- [Build and runtime verification evidence](docs/verification.md)
+
+Keep project includes restricted to fooyin's installed public headers. Add focused
+coordinator/action/filter tests to `tests/` as the corresponding tickets land.
+The intended protection boundary is ordinary interactions on audited GUI routes;
+CLI, MPRIS, and arbitrary direct controller calls remain outside that boundary.
+
+Source files are licensed under
+[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html), as indicated by their
+SPDX headers.

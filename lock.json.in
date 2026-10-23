@@ -1,0 +1,9 @@
+{
+    "Name": "Session Lock",
+    "Version": "@PROJECT_VERSION@",
+    "Author": "fooyin-lock-plugin",
+    "Category": "Playback",
+    "Description": "Session Lock scaffold; interaction protection is under development",
+    "License": "GPL-3.0-or-later",
+    "Url": ""
+}
