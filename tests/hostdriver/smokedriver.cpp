@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "widgetinputchecks.h"
+#include "playbackchecks.h"
 #include <core/plugins/plugin.h>
 #include <core/plugins/coreplugin.h>
 #include <core/playlist/playlisthandler.h>
+#include <core/player/playercontroller.h>
 #include <gui/plugins/guiplugin.h>
 #include <gui/guiconstants.h>
 #include <gui/fywidget.h>
@@ -67,6 +69,7 @@ public:
     {
         if(qEnvironmentVariableIntValue("FOOYIN_LOCK_SMOKE_TEST") == 1 && context.playlistHandler) {
             m_playlists = context.playlistHandler;
+            m_player = context.playerController;
             connect(context.playlistHandler, &Fooyin::PlaylistHandler::playlistsPopulated, this, [this]() {
                 m_playlistsReady = true;
                 quitWhenReady();
@@ -122,6 +125,9 @@ private:
         normal = m_playlists->createPlaylist(QStringLiteral("SessionLock smoke unlocked"));
         prelocked = m_playlists->createPlaylist(QStringLiteral("SessionLock smoke prelocked"));
         if(!normal || !prelocked) { fail("could not create playlist fixtures"); return; }
+        Fooyin::Track first{QStringLiteral("/tmp/session-lock-first.flac"), 0}; first.setId(1);
+        Fooyin::Track second{QStringLiteral("/tmp/session-lock-second.flac"), 0}; second.setId(2);
+        m_player->queueTracks(Fooyin::TrackList{first, second});
         m_playlists->setPlaylistLocked(prelocked->id(), true);
         m_playlists->savePlaylist(prelocked->id());
         // Existing surfaces at entry, plus fresh ones created while locked.
@@ -147,6 +153,7 @@ private:
         int triggers = 0;
         QObject probe;
         const auto connection = connect(source, &QAction::triggered, &probe, [&triggers]() { ++triggers; });
+        if(!checkWidgetInputInfrastructure(m_widgets)) { fail("widget input infrastructure checks failed"); return; }
         action->trigger();
         if(!action->isChecked() || !action->isEnabled() || !action->text().contains(QStringLiteral("Locked"))) {
             qCritical("Session Lock smoke: lock transition/indicator failed");
@@ -154,7 +161,6 @@ private:
             return;
         }
         if(!normal->isLocked() || !prelocked->isLocked()) { fail("regular playlist locks not applied"); return; }
-        if(!checkWidgetInputInfrastructure(m_widgets)) { fail("widget input infrastructure checks failed"); return; }
         if(!checkInputs(existing)) return;
         QWidget* content{nullptr};
         for(auto* candidate : QApplication::allWidgets()) {
@@ -162,6 +168,9 @@ private:
         }
         if(!content) { fail("could not find the host's nested playlist widget"); return; }
         if(!checkPlaylistInputs(content)) return;
+        if(!checkPlaybackInputs(m_widgets, m_actions, m_player, content)) {
+            fail("production playback protection failed"); return;
+        }
         auto* unrelated = m_widgets->createWidget(QStringLiteral("Spacer"));
         if(!unrelated) { fail("could not create unrelated layout widget"); return; }
         unrelated->setParent(existing);
@@ -236,6 +245,9 @@ private:
         }
         qInfo("Session Lock smoke: protected proxies/sources, refresh, late registration, and host-state restoration verified");
         qInfo("Session Lock smoke: playlist locks, parent/viewport input ordering, late/replaced widgets, and restoration verified");
+        // The queue fixtures are runtime-only tracks, not library database rows.
+        // Remove them after all assertions so normal host persistence stays valid.
+        m_player->clearQueue();
         action->trigger(); // Also exercise normal host shutdown while locked.
         qInfo("Session Lock smoke: registered toggle locked, unlocked, and relocked for shutdown");
         delete existing;
@@ -324,6 +336,7 @@ private:
 
     QPointer<Fooyin::ActionManager> m_actions;
     QPointer<Fooyin::PlaylistHandler> m_playlists;
+    Fooyin::PlayerController* m_player{nullptr};
     Fooyin::WidgetProvider* m_widgets{nullptr};
     int m_attempts{0};
     bool m_guiReady{false};

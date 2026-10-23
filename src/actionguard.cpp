@@ -7,6 +7,7 @@
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QMenu>
 #include <QScopedValueRollback>
 
 #include <algorithm>
@@ -62,6 +63,27 @@ void refreshProxy(Command* command)
 
 ActionGuard::ActionGuard(ActionManager* actions)
     : m_actions{actions}
+    , m_directInput{[this](QWidget* widget, auto surface, QEvent* event) {
+        switch(event->type()) {
+            case QEvent::MouseButtonPress: case QEvent::MouseButtonRelease: case QEvent::MouseButtonDblClick:
+            case QEvent::KeyPress: case QEvent::KeyRelease: case QEvent::ShortcutOverride:
+            case QEvent::ContextMenu: break;
+            default: return false;
+        }
+        using Surface = WidgetInputFilter::Surface;
+        // An Edit menu can retain a late playlist's unregistered actions before
+        // that playlist has ever received input. Inspect roots before menu input
+        // too, including menus already open at entry.
+        if(qobject_cast<QMenu*>(widget)) {
+            for(auto* root : QApplication::allWidgets()) protectDirectActions(root);
+        }
+        if(surface == Surface::Playlist || surface == Surface::Queue || surface == Surface::LibraryTree) {
+            for(auto* parent = widget; parent; parent = parent->parentWidget()) {
+                if(parent->inherits("Fooyin::FyWidget")) { protectDirectActions(parent); break; }
+            }
+        }
+        return false;
+    }}
 { }
 
 ActionGuard::~ActionGuard()
@@ -85,6 +107,8 @@ bool ActionGuard::enter(RecoveryJournal&, QString& error)
         m_locked = true;
         m_registrationConnection = connect(m_actions, &ActionManager::commandsChanged, this, &ActionGuard::refresh);
         refresh();
+        for(auto* widget : QApplication::allWidgets()) protectDirectActions(widget);
+        m_directInput.start();
     }
     return true;
 }
@@ -92,6 +116,7 @@ bool ActionGuard::enter(RecoveryJournal&, QString& error)
 bool ActionGuard::leave(QString&)
 {
     m_locked = false;
+    m_directInput.stop();
     disconnect(m_registrationConnection);
     for(const auto& command : m_commands) {
         if(command) {
@@ -225,6 +250,29 @@ void ActionGuard::refresh()
             release(proxy);
             refreshProxy(command);
         }
+    }
+}
+
+void ActionGuard::protectDirectActions(QWidget* widget)
+{
+    if(!m_actions || (!widget->inherits("Fooyin::PlaylistWidget") && !widget->inherits("Fooyin::QueueViewer")
+                      && !widget->inherits("Fooyin::LibraryTreeWidget"))) return;
+    // Audited 0.13.1 ownership invariant: the only unregistered actions owned
+    // directly by these roots are playback/content/queue mutations. Display and
+    // configuration actions belong to their menus; copy/search/select-all are
+    // registered. Never identify commands by translated text or child order.
+    std::set<Id> contexts{Constants::Context::Global, Constants::Context::TrackSelection};
+    for(auto* context : widget->findChildren<WidgetContext*>(QString{}, Qt::FindDirectChildrenOnly)) {
+        const auto ids = context->context();
+        contexts.insert(ids.begin(), ids.end());
+    }
+    std::set<QAction*> registered;
+    for(auto* command : m_actions->commands()) {
+        registered.insert(command->action());
+        for(const auto& context : contexts) registered.insert(command->actionForContext(context));
+    }
+    for(auto* action : widget->findChildren<QAction*>(QString{}, Qt::FindDirectChildrenOnly)) {
+        if(!registered.contains(action)) suppress(action);
     }
 }
 } // namespace Fooyin::SessionLock

@@ -135,6 +135,11 @@ playlist input guards. See the [playlist audit](playlist-protection.md) for the
 completed tab/switcher/manager/organiser routes and autoplaylist policy. The table
 below retains ownership of the broader remaining work.
 
+Ticket 007 now adds [production gesture and queue protection](playback-protection.md),
+including root-owned unregistered playback/content/queue actions. The historical
+004 audit below identifies route ownership; 007's audit records completed routes
+and its explicit transition/configuration follow-ups.
+
 | Direct path | Required work |
 | --- | --- |
 | Playlist/queue/library double-click, Enter, middle-click and configured activation; queue Play Now/Queue Next/Stop After This context actions | 006/007: targeted discovery and gesture/context-menu filters |

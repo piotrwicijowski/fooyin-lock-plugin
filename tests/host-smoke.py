@@ -51,6 +51,7 @@ def main():
             "fy.sessionlock: GUI services acquired",
             "Session Lock smoke: host event loop reached",
             "Session Lock smoke: queue/library/filter/search/seek discovery, rules, ordering, and teardown verified",
+            "Session Lock smoke: production playback gestures, direct menu actions, queue drops, and browsing verified",
             "Session Lock smoke: protected proxies/sources, refresh, late registration, and host-state restoration verified",
             "Session Lock smoke: playlist locks, parent/viewport input ordering, late/replaced widgets, and restoration verified",
             "Session Lock smoke: registered toggle locked, unlocked, and relocked for shutdown",
@@ -70,6 +71,8 @@ def main():
                 raise SystemExit(f"FAIL: {phase} host exited with {result.returncode}")
             if "QSQLITE driver not loaded" in result.stdout:
                 raise SystemExit("FAIL: the real host's Qt SQLite runtime dependency is missing")
+            if "fy.db: Failed to execute" in result.stdout:
+                raise SystemExit(f"FAIL: {phase} host reported a database statement failure")
             if phase == "interrupt":
                 expected = (*full_sequence[:-1], "Session Lock smoke: interrupting without plugin or host cleanup")
                 if full_sequence[-1] in result.stdout:

@@ -3,7 +3,7 @@
 A plugin for preventing accidental playback, seeking, playlist, and queue changes
 while keeping fooyin's playlist and library browsing usable.
 
-**Current status: registered actions and regular-playlist protection.** The session toggle suppresses
+**Current status: actions, playlists, and playback/queue gestures.** The session toggle suppresses
 audited transport, seek, playback-order, queue and playlist-edit commands, including
 their registered shortcuts and underlying actions. Unlock restores current
 host-controlled action state. See the [command inventory](docs/registered-actions.md).
@@ -12,9 +12,12 @@ recovery. Targeted guards cover playlist deletion/unlock, rename, tab buttons,
 sorting and drops; see the [playlist protection audit](docs/playlist-protection.md).
 Shared [widget discovery and input rules](docs/widget-input.md) cover queue,
 library/filter/search and seek surfaces, including Wavebar and Spectrogram.
-Direct playback/queue/seek gestures and browsing side-effect guards remain in
-[tickets 007–011](.plan/INDEX.md); this development version is not yet a complete
-session lock.
+Direct [playback and queue protection](docs/playback-protection.md) blocks
+playlist/library/filter/queue activation, direct playback menu commands and
+mutation drops while preserving selection, scrolling and library-tree expansion.
+Natural queue consumption continues in both modes. Seeking gestures and browsing
+side-effect guards remain in [tickets 008–011](.plan/INDEX.md); this development
+version is not yet a complete session lock.
 The approved scope is recorded in the
 [behavior contract](.plan/001-decide-lock-policy.md#approved-behavior-contract).
 
@@ -125,6 +128,7 @@ Debug lifecycle messages are available with
 - [Protected commands and remaining direct-call routes](docs/registered-actions.md)
 - [Playlist locks, GUI routes and durable recovery](docs/playlist-protection.md)
 - [Widget identification, input rules and dynamic discovery](docs/widget-input.md)
+- [Playback gestures, direct menu actions and queue drops](docs/playback-protection.md)
 - [Build and runtime verification evidence](docs/verification.md)
 
 Keep project includes restricted to fooyin's installed public headers. Add focused

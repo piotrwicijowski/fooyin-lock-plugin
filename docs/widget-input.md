@@ -4,9 +4,10 @@ Ticket [006](../.plan/006-discover-widgets-and-filter-input.md), verified on Lin
 Qt 6.8.2, fooyin 0.13.1 commit `bb8d9f0371b254571fffec310dce3ee1ce005c87`.
 
 `WidgetInputFilter` provides dispatch-time discovery and reusable input candidates.
-`PlaylistGuard` uses it for the production playlist rules. The other candidates
-are integration points for tickets 007–009; their production protection and
-settings-side-effect handling are still planned.
+`PlaylistGuard` uses it for playlist rules; `PlaybackGuard` consumes activation and
+drop candidates, and ActionGuard discovers direct actions before root/menu input.
+See the [production playback policy](playback-protection.md). Seeking/search-write
+candidates and settings-side-effect handling remain integration points for 008–009.
 
 ## Identification matrix
 
@@ -68,13 +69,13 @@ policy:
 | `isSeekInput` | Named seek controls: left press/release/double-click/held move, wheel, arrow keys in all key phases; built-in QSlider also Home/End/PageUp/PageDown. | Hover, focus traversal, Escape/right-button cancellation, labels, spectrogram live views, volume controls. |
 | `isMutationDrop` | Drag enter/move/drop; consumer chooses the destination surface. | Drag leave (allows host cleanup); it does not inhibit drag initiation. |
 
-Tickets 007–009 must combine these candidates with configuration-aware policies:
-configured activation, direct menu commands, queue deletion/edit shortcuts and drag
-initiation still need their respective route audits. In particular, consuming a
-library double-click cannot on its own preserve its expansion behavior, and
-allowing selection/text changes cannot suppress selection-generated playlist writes
-or playback-follows-cursor. Those effects require the browsing guard. Ordinary
-keyboard expansion, selection, scrolling and editor input remain deliverable.
+Ticket 007 combines activation/drop candidates with direct menu-source protection
+and drag-initiation restrictions. Library double-click expansion is separated
+through public tree APIs; registered queue deletion/edit shortcuts remain covered
+by ActionGuard. Allowing selection/text changes cannot suppress selection-generated
+playlist writes or playback-follows-cursor. Those effects require ticket 009's
+browsing guard. Ordinary keyboard expansion, selection, scrolling and editor input
+remain deliverable.
 
 ## Dynamic discovery and lifetime
 

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "playlistguard.h"
+#include "playbackguard.h"
 #include "playlisthost.h"
 
 #include <core/scripting/scriptregistry.h>
+#include <core/coresettings.h>
+#include <core/player/playercontroller.h>
 
 #include <QFile>
 #include <QSignalSpy>
@@ -24,12 +27,13 @@ struct Session
     QString journalPath{host.directory.filePath(QStringLiteral("recovery.json"))};
     LockCoordinator coordinator{journalPath};
     PlaylistGuard* guard{nullptr};
-    Session()
+    explicit Session(bool playback = false)
     {
         auto owned = std::make_unique<PlaylistGuard>(host.handler.get(), host.pool);
         guard = owned.get();
         QObject::connect(guard, &PlaylistGuard::protectionFailed, &coordinator, &LockCoordinator::failProtection);
         coordinator.addGuard(std::move(owned));
+        if(playback) coordinator.addGuard(std::make_unique<PlaybackGuard>());
         coordinator.recover();
     }
 };
@@ -40,6 +44,58 @@ class PlaylistGuardTest : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase() { ScriptRegistry::instance().finalise(); }
+
+    void naturalQueueProgression_data()
+    {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("playlist-overrides") << static_cast<int>(PlaybackQueueMode::PlaylistWithOverrides);
+        QTest::newRow("queue-source") << static_cast<int>(PlaybackQueueMode::QueueAsPlaybackSource);
+    }
+
+    void naturalQueueProgression()
+    {
+        QFETCH(int, mode);
+        Session s{true};
+        s.host.settings.createTempSetting<Settings::Core::PlaybackQueueMode>(mode);
+        s.host.settings.createTempSetting<Settings::Core::PlaybackQueueHistoryLimit>(10);
+        PlayerController player{&s.host.settings, s.host.handler.get()};
+        QCOMPARE(static_cast<int>(player.playbackQueueMode()), mode);
+        auto* playlist = s.host.handler->createPlaylist(QStringLiteral("Natural queue"));
+        Track first{QStringLiteral("/tmp/first.flac"), 0}; first.setId(1);
+        Track second{QStringLiteral("/tmp/second.flac"), 0}; second.setId(2);
+        Track third{QStringLiteral("/tmp/third.flac"), 0}; third.setId(3);
+        s.host.handler->appendToPlaylist(playlist->id(), {first, second, third});
+        player.queueTracks(playlist->playlistTracks());
+        std::vector<Player::TrackChangeRequest> requests;
+        connect(&player, &PlayerController::trackChangeRequested, &player,
+                [&](const Player::TrackChangeRequest& request) {
+            requests.push_back(request);
+            player.commitCurrentTrack(request); // Model the engine's public commit boundary; no audio device.
+        });
+        player.play();
+        QCOMPARE(player.currentTrack(), first);
+        QCOMPARE(requests.size(), 1U);
+        QVERIFY(s.coordinator.setLocked(true));
+        const auto before = player.playbackQueue().items();
+        player.advance(Player::AdvanceReason::NaturalEnd);
+        QCOMPARE(requests.size(), 2U);
+        QCOMPARE(requests.back().context.reason, Player::AdvanceReason::NaturalEnd);
+        QVERIFY(!requests.back().context.userInitiated);
+        QCOMPARE(player.currentTrack(), second);
+        const auto consumed = player.playbackQueue().items();
+        if(mode == static_cast<int>(PlaybackQueueMode::PlaylistWithOverrides)) QVERIFY(consumed.size() < before.size());
+        else QVERIFY(player.playbackQueue().currentIndex() > 0);
+        QVERIFY(s.coordinator.setLocked(false));
+        QCOMPARE(player.playbackQueue().items(), consumed); // Unlock never restores consumed queue state.
+        QCOMPARE(player.currentTrack(), second);
+        QVERIFY(s.coordinator.setLocked(true));
+        player.advance(Player::AdvanceReason::NaturalEnd);
+        QCOMPARE(player.currentTrack(), third);
+        const auto finalQueue = player.playbackQueue().items();
+        s.coordinator.shutdown();
+        QCOMPARE(player.playbackQueue().items(), finalQueue);
+        QCOMPARE(player.currentTrack(), third);
+    }
 
     void locksAllAndRestoresOnlyOwnedChanges()
     {

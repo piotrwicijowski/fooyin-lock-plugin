@@ -2,6 +2,7 @@
 #pragma once
 
 #include "lockcoordinator.h"
+#include "widgetinputfilter.h"
 
 #include <QPointer>
 
@@ -38,11 +39,13 @@ private:
     };
 
     void refresh();
+    void protectDirectActions(QWidget* widget);
     void suppress(QAction* action);
     void release(QAction* action);
     static void restore(const Restriction& restriction);
 
     QPointer<ActionManager> m_actions;
+    WidgetInputFilter m_directInput;
     std::map<QAction*, Restriction> m_restrictions;
     std::vector<QPointer<Command>> m_commands;
     QMetaObject::Connection m_registrationConnection;
