@@ -1,8 +1,7 @@
 # fooyin-lock-plugin
 
 Session Lock for [fooyin](https://github.com/fooyin/fooyin). Prevent accidental
-playback, seeking, playlist, and queue changes while you browse your music. Turn
-the lock on from the Playback menu, then turn it off when you want to make changes.
+playback, seeking, playlist, and queue changes while you browse your music.
 
 - [Installation](#installation)
 - [Getting started](#getting-started)
@@ -15,29 +14,23 @@ the lock on from the Playback menu, then turn it off when you want to make chang
 1. Download the Linux x86-64 **`.zip`** for **Ubuntu 24.04**, **Ubuntu 26.04**, or
    **Arch Linux** from the [release assets](../../releases). Choose the build
    matching your distribution and fooyin version.
-2. In fooyin, open **Settings → Plugins → Install** and select the downloaded ZIP
-   directly, **without extracting it**.
+2. In fooyin, open **Settings → Plugins → Install** and select the downloaded
+   `.zip` file.
 3. Restart fooyin when prompted. The plugin appears as **Session Lock** in
    **Settings → Plugins**.
 
 For installation from source, see the [build and installation guide](docs/BUILDING.md).
 
-Manual drag-and-drop and rendered Wavebar seeking checks passed on **fooyin
-0.14.0**, **Arch Linux/Wayland**, and **Qt 6.12.0**. The automated test suite uses a
-pinned fooyin **0.13.1** baseline. See
-[compatibility and known limitations](docs/compatibility.md) for coverage details.
-
 ## Getting started
 
-1. Start playing the music you want to hear and arrange your playlist or queue.
+1. Start playing the music and arrange your playlist or queue.
 2. Open **Playback → Session Lock** to turn the lock on. Wait for the menu item to
    show **Locked** with a check mark.
-3. Browse, search, select tracks, and switch playlists while playback continues.
-4. Choose **Playback → Session Lock** again to unlock and make changes normally.
+3. Any accidental playback changes, seeking or playlist reordering is prevented.
+4. Choose **Playback → Session Lock** again to unlock.
 
 You can assign a keyboard shortcut to **Session Lock** in fooyin's shortcut
-settings. There is no default shortcut. Each time fooyin starts, the session is
-unlocked after any recovery has finished.
+settings. The session starts unlocked on fooyin start.
 
 ## Features
 
@@ -57,8 +50,7 @@ locked after you turn Session Lock off.
 The lock covers supported fooyin controls. Commands from outside fooyin, such as
 remote-control apps, and other plugins that control playback directly can still
 make changes. Background library updates, automatic playlists, and work already
-started before locking can also continue. Compatibility with Vim Motions and
-other third-party input plugins has not yet been verified.
+started before locking can also continue.
 
 ## Recovery after an unexpected exit
 
@@ -75,9 +67,3 @@ application log. A new lock can only start after recovery succeeds.
 - [Building and installing](docs/BUILDING.md) — requirements, source builds, installation paths, testing, and developer references.
 - [Compatibility and known limitations](docs/compatibility.md) — tested fooyin setups, supported controls, and verification evidence.
 - [How the lock works](docs/architecture.md) — technical overview for contributors.
-
-## License
-
-Source files are licensed under
-[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html), as indicated by their
-SPDX headers.
