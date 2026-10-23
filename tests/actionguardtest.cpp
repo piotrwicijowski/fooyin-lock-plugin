@@ -344,10 +344,12 @@ private Q_SLOTS:
     {
         Host host;
         PlaylistHost playlists;
+        playlists.settings.createSetting(QStringLiteral("Playlist/PlaybackFollowsCursor"), false);
         QAction source;
         host.actions.registerAction(&source, Constants::Actions::Play);
         {
-            LockRuntime runtime{host.directory.filePath(QStringLiteral("runtime.json"))};
+            LockRuntime runtime{host.directory.filePath(QStringLiteral("runtime.json")),
+                                playlists.directory.filePath(QStringLiteral("settings.ini"))};
             auto gui = guiContext();
             gui.actionManager = &host.actions;
             QVERIFY(runtime.initialiseCore(playlists.context()));

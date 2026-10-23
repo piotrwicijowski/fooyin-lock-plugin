@@ -3,7 +3,7 @@
 A plugin for preventing accidental playback, seeking, playlist, and queue changes
 while keeping fooyin's playlist and library browsing usable.
 
-**Current status: actions, playlists, playback/queue gestures, and seeking.** The session toggle suppresses
+**Current status: actions, playlists, playback/queue gestures, seeking, and safe browsing.** The session toggle suppresses
 audited transport, seek, playback-order, queue and playlist-edit commands, including
 their registered shortcuts and underlying actions. Unlock restores current
 host-controlled action state. See the [command inventory](docs/registered-actions.md).
@@ -18,7 +18,11 @@ mutation drops while preserving selection, scrolling and library-tree expansion.
 Natural queue consumption continues in both modes. [Seeking protection](docs/seeking-protection.md)
 blocks built-in Seekbar, Wavebar and full-track Spectrogram seek input and cancels
 active previews at lock entry while preserving progress and track capability.
-Browsing side-effect guards and assembled validation remain in [tickets 009–011](.plan/INDEX.md); this development
+[Browsing protection](docs/browsing-protection.md) suppresses cursor-follow scheduling
+and selection/search-generated playlist writes while retaining selection, live
+library/filter searching and viewed-playlist switching. Temporary settings and
+saved layout overrides have interrupted-session recovery.
+Transition hardening and assembled validation remain in [tickets 010–011](.plan/INDEX.md); this development
 version is not yet a complete session lock.
 The approved scope is recorded in the
 [behavior contract](.plan/001-decide-lock-policy.md#approved-behavior-contract).
@@ -85,7 +89,11 @@ and the application log. Activating it retries recovery before allowing a new
 lock. Pre-existing playlist locks survive unlock and clean shutdown. Playlist
 switcher context menus are suppressed while locked because they contain direct
 mutation commands; selection, scrolling and switching remain available. Autoplaylist
-regeneration continues. Settings recovery adapters arrive with the browsing guard.
+regeneration continues. Cursor-follow and per-widget result-generation settings
+restore on unlock, clean shutdown and interrupted-session recovery. Existing
+scheduled playback is retained. Unconnected search bars keep text editing available
+while their result-playlist generation is suspended; embedded/connected searches
+continue updating their own views.
 
 ## Real-host smoke test
 
@@ -107,6 +115,8 @@ late registration, current-state restoration, concrete playlist locks, targeted
 parent/viewport input filtering, and late/replaced widgets. It then hard-exits a
 second host while locked and restarts the same profile to verify interrupted-session
 recovery and journal acknowledgement.
+The browsing checks also exercise populated library/filter models, colliding result
+names, live search, search modes and Quick Search show-all, and saved-layout recovery.
 It does not need an audio device or
 a display server. The lifecycle test separately exercises actual `QPluginLoader`
 unload with Qt's default unload-prevention hint cleared.
@@ -132,6 +142,7 @@ Debug lifecycle messages are available with
 - [Widget identification, input rules and dynamic discovery](docs/widget-input.md)
 - [Playback gestures, direct menu actions and queue drops](docs/playback-protection.md)
 - [Seeking controls, preview cancellation and supported matrix](docs/seeking-protection.md)
+- [Safe browsing, generated playlists, search modes and settings recovery](docs/browsing-protection.md)
 - [Build and runtime verification evidence](docs/verification.md)
 
 Keep project includes restricted to fooyin's installed public headers. Add focused

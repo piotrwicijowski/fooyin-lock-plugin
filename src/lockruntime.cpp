@@ -2,6 +2,7 @@
 #include "lockruntime.h"
 
 #include "actionguard.h"
+#include "browsingguard.h"
 #include "lockcoordinator.h"
 #include "playlistguard.h"
 #include "playbackguard.h"
@@ -26,10 +27,11 @@
 #include <QTimer>
 
 namespace Fooyin::SessionLock {
-LockRuntime::LockRuntime(QString recoveryPath)
+LockRuntime::LockRuntime(QString recoveryPath, QString settingsPath)
     : m_coordinator{std::make_unique<LockCoordinator>(
           recoveryPath.isEmpty() ? QDir{Utils::statePath()}.filePath(QStringLiteral("session-lock-recovery.json"))
                                  : recoveryPath)}
+    , m_settingsPath{std::move(settingsPath)}
 {
     setObjectName(QStringLiteral("SessionLock.Runtime"));
     connect(m_coordinator.get(), &LockCoordinator::stateChanged, this, &LockRuntime::updateAction);
@@ -77,6 +79,9 @@ bool LockRuntime::initialiseGui(const GuiPluginContext& context)
     m_services.currentPlaylist = context.playlistSelection;
     m_guiInitialised           = true;
     m_coordinator->addGuard(std::make_unique<ActionGuard>(m_services.actions));
+    auto browsing = std::make_unique<BrowsingGuard>(m_services.settings, context.layoutProvider, m_settingsPath);
+    connect(browsing.get(), &BrowsingGuard::protectionFailed, m_coordinator.get(), &LockCoordinator::failProtection);
+    m_coordinator->addGuard(std::move(browsing));
     auto playlists = std::make_unique<PlaylistGuard>(m_services.playlists, m_services.database);
     connect(playlists.get(), &PlaylistGuard::protectionFailed, m_coordinator.get(), &LockCoordinator::failProtection);
     m_coordinator->addGuard(std::move(playlists));

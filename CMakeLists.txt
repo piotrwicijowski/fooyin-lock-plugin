@@ -21,6 +21,7 @@ set(FOOYIN_PLUGIN_INSTALL_DIR "${LOCK_PLUGIN_INSTALL_DIR}")
 set(LIB_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/fooyin")
 
 add_library(LockRuntime STATIC
+    src/browsingguard.cpp src/browsingguard.h
     src/actionguard.cpp src/actionguard.h
     src/playbackguard.cpp src/playbackguard.h
     src/seekguard.cpp src/seekguard.h

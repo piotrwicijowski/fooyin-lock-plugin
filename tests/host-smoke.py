@@ -52,6 +52,8 @@ def main():
             "Session Lock smoke: host event loop reached",
             "Session Lock smoke: queue/library/filter/search/seek discovery, rules, ordering, and teardown verified",
             "Session Lock smoke: production seeking, preview cancellation, progress, track capability, and recreation verified",
+            "Session Lock smoke: autosearch, forced search submission, quick-search show-all, and search-mode restoration verified",
+            "Session Lock smoke: cursor scheduling, generated-playlist collisions, search, switching, and restoration verified",
             "Session Lock smoke: production playback gestures, direct menu actions, queue drops, and browsing verified",
             "Session Lock smoke: protected proxies/sources, refresh, late registration, and host-state restoration verified",
             "Session Lock smoke: playlist locks, parent/viewport input ordering, late/replaced widgets, and restoration verified",
@@ -63,10 +65,10 @@ def main():
             try:
                 result = subprocess.run([str(args.host.resolve()), "--skip-single"],
                                         env=env, cwd=home, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT, text=True, timeout=30)
+                                        stderr=subprocess.STDOUT, text=True, timeout=45)
             except subprocess.TimeoutExpired as error:
                 print(error.stdout.decode(errors="replace") if error.stdout else "")
-                raise SystemExit(f"FAIL: {phase} host did not finish within 30 seconds")
+                raise SystemExit(f"FAIL: {phase} host did not finish within 45 seconds")
             print(result.stdout, end="")
             if result.returncode:
                 raise SystemExit(f"FAIL: {phase} host exited with {result.returncode}")
@@ -80,7 +82,8 @@ def main():
                     raise SystemExit("FAIL: interrupted host unexpectedly ran plugin cleanup")
             elif phase == "recover":
                 expected = (*full_sequence[:3],
-                            "Session Lock smoke: interrupted playlist locks recovered after restart", full_sequence[-1])
+                            "Session Lock smoke: interrupted playlist locks recovered after restart",
+                            "Session Lock smoke: interrupted browsing settings recovered after restart", full_sequence[-1])
             else:
                 expected = full_sequence
             if args.optional_plugin and phase != "recover":
@@ -99,9 +102,30 @@ def main():
             records = json.loads(journals[0].read_text())["records"]
             if bool(records) != (phase == "interrupt"):
                 raise SystemExit(f"FAIL: incorrect outstanding recovery records after {phase}")
-            if any(record["kind"] != "playlist-lock" or record["original"] != {"type": "bool", "value": False}
-                   or record["temporary"] != {"type": "bool", "value": True} for record in records):
-                raise SystemExit("FAIL: interrupted journal did not preserve typed playlist originals")
+            for record in records:
+                if record["kind"] == "playlist-lock":
+                    valid = (record["original"] == {"type": "bool", "value": False}
+                             and record["temporary"] == {"type": "bool", "value": True})
+                else:
+                    valid = (record["guard"] == "browsing"
+                             and record["kind"] in ("setting", "widget-setting", "quick-search-mode")
+                             and ((record["original"]["type"] == "bool"
+                                   and record["temporary"] == {"type": "bool", "value": False})
+                                  or (record["original"]["type"] == "int" and record["original"]["value"] in range(4)
+                                      and record["temporary"] == {"type": "int", "value": 2})))
+                if not valid:
+                    raise SystemExit("FAIL: interrupted journal did not preserve typed originals")
+            if phase == "interrupt" and not any(record["guard"] == "browsing" for record in records):
+                raise SystemExit("FAIL: missing interrupted browsing recovery records")
+            layouts = list((home / "config").rglob("SessionLock recovery.fyl"))
+            if len(layouts) != 1:
+                raise SystemExit("FAIL: expected one saved browsing recovery layout")
+            widgets = json.loads(layouts[0].read_text())["Widgets"]
+            tree = widgets[0]["LibraryTree"]
+            if tree["PlaylistEnabled"] != (phase != "interrupt"):
+                raise SystemExit(f"FAIL: saved result-playlist setting incorrect after {phase}")
+            if widgets[1]["SearchBar"]["SearchMode"] != (2 if phase == "interrupt" else 1):
+                raise SystemExit(f"FAIL: saved search mode incorrect after {phase}")
         print("PASS: real host playlist protection, clean shutdown, interruption, and restart recovery verified")
 
 

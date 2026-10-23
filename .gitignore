@@ -10,3 +10,4 @@ docs/*
 !docs/widget-input.md
 !docs/playback-protection.md
 !docs/seeking-protection.md
+!docs/browsing-protection.md

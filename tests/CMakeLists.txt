@@ -42,6 +42,11 @@ target_compile_definitions(lock_seek_input_test PRIVATE QT_NO_KEYWORDS)
 add_test(NAME lock.seek-input COMMAND lock_seek_input_test)
 set_tests_properties(lock.seek-input PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
 
+add_executable(lock_browsing_test browsingguardtest.cpp)
+target_link_libraries(lock_browsing_test PRIVATE LockRuntime Qt6::Test)
+add_test(NAME lock.browsing COMMAND lock_browsing_test)
+set_tests_properties(lock.browsing PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
 # A separate, opt-in driver closes the real host via QApplication::quit().
 # It is never part of the installed production plugin.
 add_subdirectory(hostdriver)
@@ -53,5 +58,5 @@ if(LOCK_FOOYIN_EXECUTABLE)
             --host "${LOCK_FOOYIN_EXECUTABLE}"
             --plugin $<TARGET_FILE:Lock>
             --driver $<TARGET_FILE:LockSmokeDriver>)
-    set_tests_properties(lock.host-smoke PROPERTIES TIMEOUT 100)
+    set_tests_properties(lock.host-smoke PROPERTIES TIMEOUT 150)
 endif()

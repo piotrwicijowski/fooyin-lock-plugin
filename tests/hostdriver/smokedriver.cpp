@@ -2,7 +2,9 @@
 #include "widgetinputchecks.h"
 #include "playbackchecks.h"
 #include "seekchecks.h"
+#include "browsingchecks.h"
 #include <core/plugins/plugin.h>
+#include <core/coresettings.h>
 #include <core/plugins/coreplugin.h>
 #include <core/playlist/playlisthandler.h>
 #include <core/player/playercontroller.h>
@@ -10,6 +12,8 @@
 #include <gui/guiconstants.h>
 #include <gui/fywidget.h>
 #include <gui/widgetprovider.h>
+#include <gui/layout/layoutprovider.h>
+#include <utils/settings/settingsmanager.h>
 #include <utils/actions/actionmanager.h>
 #include <utils/actions/command.h>
 
@@ -24,6 +28,7 @@
 #include <QKeyEvent>
 #include <QHeaderView>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
@@ -33,6 +38,7 @@
 #include <QTimer>
 
 #include <cstdlib>
+#include <memory>
 
 // A receiver filter must never see protected inputs. This verifies ordering
 // against actual host surfaces and viewports, not just a rule function result.
@@ -70,6 +76,7 @@ public:
     {
         if(qEnvironmentVariableIntValue("FOOYIN_LOCK_SMOKE_TEST") == 1 && context.playlistHandler) {
             m_playlists = context.playlistHandler;
+            m_core = std::make_unique<Fooyin::CorePluginContext>(context);
             m_player = context.playerController;
             connect(context.playlistHandler, &Fooyin::PlaylistHandler::playlistsPopulated, this, [this]() {
                 m_playlistsReady = true;
@@ -84,6 +91,7 @@ public:
             m_guiReady = true;
             m_actions = context.actionManager;
             m_widgets = context.widgetProvider;
+            m_gui = std::make_unique<Fooyin::GuiPluginContext>(context);
             quitWhenReady();
         }
     }
@@ -91,7 +99,8 @@ public:
 private:
     void quitWhenReady()
     {
-        if(m_guiReady && m_playlistsReady) {
+        if(m_guiReady && m_playlistsReady && !m_started) {
+            m_started = true;
             QTimer::singleShot(0, this, [this]() {
                 qInfo("Session Lock smoke: host event loop reached; playlists populated");
                 checkControl();
@@ -113,6 +122,13 @@ private:
             return;
         }
         const bool recoveryRun = qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") == QStringLiteral("recover");
+        if(qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") != QStringLiteral("normal")) {
+            if(!m_core->settingsManager->value(QStringLiteral("Playlist/PlaybackFollowsCursor")).toBool()
+               || Fooyin::FyStateSettings{}.value(QStringLiteral("Searching/QuickSearchState")).toJsonObject()
+                      .value(QStringLiteral("SearchMode")).toInt() != 3) {
+                fail("previous session did not restore durable browsing settings"); return;
+            }
+        }
         auto* normal = m_playlists->playlistByName(QStringLiteral("SessionLock smoke unlocked"));
         auto* prelocked = m_playlists->playlistByName(QStringLiteral("SessionLock smoke prelocked"));
         if(recoveryRun) {
@@ -120,6 +136,10 @@ private:
                 fail("startup recovery did not restore exact original playlist locks"); return;
             }
             qInfo("Session Lock smoke: interrupted playlist locks recovered after restart");
+            if(!m_core->settingsManager->value(QStringLiteral("Playlist/PlaybackFollowsCursor")).toBool()) {
+                fail("startup recovery did not restore cursor-follow"); return;
+            }
+            qInfo("Session Lock smoke: interrupted browsing settings recovered after restart");
             QCoreApplication::quit();
             return;
         }
@@ -128,7 +148,6 @@ private:
         if(!normal || !prelocked) { fail("could not create playlist fixtures"); return; }
         Fooyin::Track first{QStringLiteral("/tmp/session-lock-first.flac"), 0}; first.setId(1);
         Fooyin::Track second{QStringLiteral("/tmp/session-lock-second.flac"), 0}; second.setId(2);
-        m_player->queueTracks(Fooyin::TrackList{first, second});
         m_playlists->setPlaylistLocked(prelocked->id(), true);
         m_playlists->savePlaylist(prelocked->id());
         // Existing surfaces at entry, plus fresh ones created while locked.
@@ -156,6 +175,8 @@ private:
         const auto connection = connect(source, &QAction::triggered, &probe, [&triggers]() { ++triggers; });
         if(!checkWidgetInputInfrastructure(m_widgets)) { fail("widget input infrastructure checks failed"); return; }
         if(!checkSeekInputs(m_widgets, m_player, action)) { fail("production seeking checks failed"); return; }
+        if(!checkBrowsing(*m_core, *m_gui, action)) { fail("production browsing checks failed"); return; }
+        m_player->queueTracks(Fooyin::TrackList{first, second});
         action->trigger();
         if(!action->isChecked() || !action->isEnabled() || !action->text().contains(QStringLiteral("Locked"))) {
             qCritical("Session Lock smoke: lock transition/indicator failed");
@@ -250,7 +271,20 @@ private:
         // The queue fixtures are runtime-only tracks, not library database rows.
         // Remove them after all assertions so normal host persistence stays valid.
         m_player->clearQueue();
+        QPointer<Fooyin::FyWidget> recoveryTree{m_widgets->createWidget(QStringLiteral("LibraryTree"))};
+        QPointer<Fooyin::FyWidget> recoverySearch{m_widgets->createWidget(QStringLiteral("SearchBar"))};
+        if(!recoveryTree || !recoverySearch) { fail("could not create browsing recovery fixture"); return; }
+        recoveryTree->loadLayoutData({{QStringLiteral("PlaylistEnabled"), true}});
+        recoverySearch->loadLayoutData({{QStringLiteral("SearchMode"), 1}});
+        m_core->settingsManager->set(QStringLiteral("Playlist/PlaybackFollowsCursor"), true);
         action->trigger(); // Also exercise normal host shutdown while locked.
+        QJsonArray recoveryWidgets;
+        recoveryTree->saveLayout(recoveryWidgets);
+        recoverySearch->saveLayout(recoveryWidgets);
+        const Fooyin::FyLayout recoveryLayout{QStringLiteral("SessionLock recovery"),
+            {{QStringLiteral("Name"), QStringLiteral("SessionLock recovery")},
+             {QStringLiteral("Widgets"), recoveryWidgets}}};
+        if(!m_gui->layoutProvider->saveLayout(recoveryLayout)) { fail("could not save browsing recovery layout"); return; }
         qInfo("Session Lock smoke: registered toggle locked, unlocked, and relocked for shutdown");
         delete existing;
         if(qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") == QStringLiteral("interrupt")) {
@@ -337,12 +371,15 @@ private:
     }
 
     QPointer<Fooyin::ActionManager> m_actions;
+    std::unique_ptr<Fooyin::CorePluginContext> m_core;
+    std::unique_ptr<Fooyin::GuiPluginContext> m_gui;
     QPointer<Fooyin::PlaylistHandler> m_playlists;
     Fooyin::PlayerController* m_player{nullptr};
     Fooyin::WidgetProvider* m_widgets{nullptr};
     int m_attempts{0};
     bool m_guiReady{false};
     bool m_playlistsReady{false};
+    bool m_started{false};
 };
 
 #include "smokedriver.moc"

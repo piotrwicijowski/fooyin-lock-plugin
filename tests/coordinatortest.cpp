@@ -472,6 +472,7 @@ private Q_SLOTS:
         PlaylistHost playlists;
         QTemporaryDir directory;
         SettingsManager settings{directory.filePath(QStringLiteral("settings.ini"))};
+        settings.createSetting(QStringLiteral("Playlist/PlaybackFollowsCursor"), false);
         ActionManager actions{&settings};
         QMainWindow window;
         actions.setMainWindow(&window);
@@ -479,7 +480,7 @@ private Q_SLOTS:
         Host host;
         host.journalPath = directory.filePath(QStringLiteral("recovery.json"));
         {
-            LockRuntime runtime{host.journalPath};
+            LockRuntime runtime{host.journalPath, directory.filePath(QStringLiteral("settings.ini"))};
             QVERIFY(runtime.coordinator()->addGuard(std::make_unique<Guard>(host)));
             auto core = playlists.context();
             core.settingsManager = &settings;

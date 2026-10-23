@@ -77,6 +77,21 @@ bool valid(const RecoveryRecord& record)
     if(record.kind == QStringLiteral("setting")) {
         return true;
     }
+    if(record.kind == QStringLiteral("widget-setting")) {
+        const auto slash = record.target.indexOf(u'/');
+        if(slash < 1 || record.target.mid(slash + 1).isEmpty()) return false;
+        const auto type = record.target.left(slash);
+        if(type == QStringLiteral("LibraryTree") || type == QStringLiteral("LibraryFilter")) {
+            return record.original.typeId() == QMetaType::Bool && !record.temporary.toBool();
+        }
+        return type == QStringLiteral("SearchBar") && record.original.typeId() == QMetaType::Int
+            && record.original.toInt() >= 0 && record.original.toInt() <= 3 && record.temporary.toInt() == 2;
+    }
+    if(record.kind == QStringLiteral("quick-search-mode")) {
+        return record.target == QStringLiteral("Searching/QuickSearchState/SearchMode")
+            && record.original.typeId() == QMetaType::Int && record.original.toInt() >= 0
+            && record.original.toInt() <= 3 && record.temporary.toInt() == 2;
+    }
     const QUuid identity{record.target};
     return record.kind == QStringLiteral("playlist-lock") && !identity.isNull()
         && identity.toString(QUuid::WithoutBraces) == record.target

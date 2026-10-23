@@ -43,7 +43,7 @@ class LockRuntime : public QObject
     Q_OBJECT
 
 public:
-    explicit LockRuntime(QString recoveryPath = {});
+    explicit LockRuntime(QString recoveryPath = {}, QString settingsPath = {});
     ~LockRuntime() override;
 
     bool initialiseCore(const CorePluginContext& context);
@@ -57,6 +57,7 @@ private:
 
     LockServices m_services;
     std::unique_ptr<LockCoordinator> m_coordinator;
+    QString m_settingsPath;
     QAction* m_toggle{nullptr};
     bool m_playlistsReady{false};
     bool m_coreInitialised{false};

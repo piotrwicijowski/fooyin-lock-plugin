@@ -14,7 +14,7 @@ inline constexpr auto PlaylistIdentityProperty = "SessionLock.RecoveryIdentity";
 struct RecoveryRecord
 {
     QString guard;
-    QString kind; // "playlist-lock" or "setting"
+    QString kind; // "playlist-lock", "setting", "widget-setting" or "quick-search-mode"
     QString target;
     QVariant original;
     QVariant temporary;
