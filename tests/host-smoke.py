@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Run the real fooyin host with an isolated profile and check plugin teardown."""
+"""Verify protection, recovery and settings-page disable/re-enable in the real host."""
 import argparse
 import json
 import os
@@ -17,8 +17,14 @@ def main():
     parser.add_argument("--driver", required=True, type=Path)
     parser.add_argument("--optional-plugin", action="append", default=[], type=Path,
                         help="Load matching wavebar/spectrogram modules (supply both to verify optional widgets)")
+    parser.add_argument("--platform", default="offscreen", help="Qt platform plugin (default: offscreen)")
+    parser.add_argument("--global-hotkeys", type=Path,
+                        help="Verify matching Global Hotkeys module through X11/XTest (requires --platform xcb)")
     args = parser.parse_args()
-    for path in (args.host, args.plugin, args.driver, *args.optional_plugin):
+    if args.global_hotkeys and args.platform != "xcb":
+        parser.error("--global-hotkeys requires --platform xcb and an X11 display with XTest")
+    extra_plugins = [*args.optional_plugin, *([args.global_hotkeys] if args.global_hotkeys else [])]
+    for path in (args.host, args.plugin, args.driver, *extra_plugins):
         if not path.is_file():
             parser.error(f"File does not exist: {path}")
 
@@ -27,7 +33,7 @@ def main():
         plugins = home / "plugins"
         plugins.mkdir()
         # Only the requested modules are added to the host's search path.
-        for module in (args.plugin, args.driver, *args.optional_plugin):
+        for module in (args.plugin, args.driver, *extra_plugins):
             shutil.copy2(module, plugins / module.name)
         runtime = home / "runtime"
         runtime.mkdir(mode=0o700)
@@ -39,12 +45,13 @@ def main():
             "XDG_STATE_HOME": str(home / "state"),
             "XDG_CACHE_HOME": str(home / "cache"),
             "XDG_RUNTIME_DIR": str(runtime),
-            "QT_QPA_PLATFORM": "offscreen",
+            "QT_QPA_PLATFORM": args.platform,
             "QT_LOGGING_RULES": "fy.sessionlock.debug=true",
             "QT_MESSAGE_PATTERN": "%{category}: %{message}",
             "FOOYIN_PLUGIN_PATH": str(plugins),
             "FOOYIN_LOCK_SMOKE_TEST": "1",
             "FOOYIN_LOCK_SMOKE_OPTIONAL_WIDGETS": "1" if args.optional_plugin else "0",
+            "FOOYIN_LOCK_SMOKE_GLOBAL_HOTKEYS": str(plugins / args.global_hotkeys.name) if args.global_hotkeys else "",
         })
         full_sequence = (
             "fy.sessionlock: Core services acquired",
@@ -62,7 +69,7 @@ def main():
             "fy.sessionlock: Shutdown complete",
         )
         interrupted_count = 0
-        for phase in ("normal", "interrupt", "recover-interrupt", "recover"):
+        for phase in ("normal", "interrupt", "recover-interrupt", "recover", "disable", "disabled", "reenabled"):
             env["FOOYIN_LOCK_SMOKE_PHASE"] = phase
             try:
                 result = subprocess.run([str(args.host.resolve()), "--skip-single"],
@@ -91,12 +98,29 @@ def main():
                 expected = (*full_sequence[:3],
                             "Session Lock smoke: interrupted playlist locks recovered after restart",
                             "Session Lock smoke: interrupted browsing settings recovered after restart", full_sequence[-1])
+            elif phase == "disable":
+                expected = (*full_sequence[:3],
+                            "Session Lock smoke: settings-page disable applied while locked; awaiting restart",
+                            full_sequence[-1])
+            elif phase == "disabled":
+                expected = (full_sequence[2],
+                            "Session Lock smoke: disabled host has restored originals and re-enabled the plugin for restart")
+                if any(message in result.stdout for message in (*full_sequence[:2], full_sequence[-1])):
+                    raise SystemExit("FAIL: disabled plugin unexpectedly initialised or shut down")
+            elif phase == "reenabled":
+                expected = (*full_sequence[:3],
+                            "Session Lock smoke: re-enabled host starts unlocked and locks/unlocks successfully",
+                            full_sequence[-1])
             else:
                 expected = full_sequence
             if args.optional_plugin and phase in ("normal", "interrupt"):
                 optional_marker = "Session Lock smoke: optional wavebar/spectrogram discovery and input roles verified"
                 if result.stdout.count(optional_marker) != 1:
                     raise SystemExit("FAIL: optional widget infrastructure was not verified")
+            if args.global_hotkeys and phase in ("normal", "interrupt"):
+                marker = "Session Lock smoke: native X11 Global Hotkeys media-key dispatch, suppression, and restoration verified"
+                if result.stdout.count(marker) != 1:
+                    raise SystemExit("FAIL: native Global Hotkeys dispatch was not verified")
             for message in expected:
                 if result.stdout.count(message) != 1:
                     raise SystemExit(f"FAIL: expected exactly one occurrence of {message!r}")
@@ -140,7 +164,7 @@ def main():
                 raise SystemExit(f"FAIL: saved result-playlist setting incorrect after {phase}")
             if widgets[1]["SearchBar"]["SearchMode"] != (2 if phase == "interrupt" else 1):
                 raise SystemExit(f"FAIL: saved search mode incorrect after {phase}")
-        print("PASS: real host protection, clean shutdown, repeated interruption, and restart recovery verified")
+        print("PASS: real host protection, repeated recovery, and settings-page disable/re-enable across restarts verified")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@
 #include <utils/settings/settingsmanager.h>
 
 #include <QActionGroup>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QMainWindow>
 #include <QMenu>
@@ -86,12 +87,32 @@ private Q_SLOTS:
         QCOMPARE(toggled.size(), 1);
     }
 
+    void buttonsMenusShortcutsAndRetainedSources_data()
+    {
+        QTest::addColumn<int>("key");
+        QTest::addColumn<Qt::KeyboardModifiers>("modifiers");
+        QTest::newRow("keyboard") << int(Qt::Key_K) << Qt::KeyboardModifiers{Qt::ControlModifier};
+        for(auto key : {Qt::Key_MediaPlay, Qt::Key_MediaPause, Qt::Key_MediaStop,
+                        Qt::Key_MediaNext, Qt::Key_MediaPrevious, Qt::Key_MediaTogglePlayPause}) {
+            const auto name = QKeySequence{key}.toString().toLatin1();
+            QTest::newRow(name.constData()) << int(key) << Qt::KeyboardModifiers{Qt::NoModifier};
+        }
+    }
+
     void buttonsMenusShortcutsAndRetainedSources()
     {
+        QFETCH(int, key);
+        QFETCH(Qt::KeyboardModifiers, modifiers);
         Host host;
+        const auto shortcut = [&]() {
+            QKeyEvent press{QEvent::KeyPress, key, modifiers};
+            QKeyEvent release{QEvent::KeyRelease, key, modifiers};
+            QCoreApplication::sendEvent(&host.window, &press);
+            QCoreApplication::sendEvent(&host.window, &release);
+        };
         QAction source{QStringLiteral("Play"), &host.window};
         auto* command = host.actions.registerAction(&source, Constants::Actions::PlayPause);
-        command->setDefaultShortcut(QKeySequence{Qt::CTRL | Qt::Key_K});
+        command->setDefaultShortcut(QKeySequence{QKeyCombination{modifiers, Qt::Key(key)}});
         auto* proxy = command->action();
         QSignalSpy triggered{&source, &QAction::triggered};
         QToolButton button{&host.window};
@@ -103,7 +124,7 @@ private Q_SLOTS:
         host.window.show();
         host.window.activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&host.window));
-        QTest::keyClick(&host.window, Qt::Key_K, Qt::ControlModifier);
+        shortcut();
         QCOMPARE(triggered.size(), 1);
 
         ActionGuard guard{&host.actions};
@@ -118,7 +139,7 @@ private Q_SLOTS:
         menu.actions().front()->trigger();
         proxy->trigger();
         source.trigger(); // Same route as the Global Hotkeys context action.
-        QTest::keyClick(&host.window, Qt::Key_K, Qt::ControlModifier);
+        shortcut();
         QCOMPARE(triggered.size(), 1);
         QVERIFY(guard.leave(error));
         QVERIFY(source.isEnabled());
@@ -126,7 +147,7 @@ private Q_SLOTS:
         button.click();
         retainedButton.click();
         menu.actions().front()->trigger();
-        QTest::keyClick(&host.window, Qt::Key_K, Qt::ControlModifier);
+        shortcut();
         QCOMPARE(triggered.size(), 5);
     }
 

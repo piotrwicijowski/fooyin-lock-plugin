@@ -3,6 +3,7 @@
 #include "playbackchecks.h"
 #include "seekchecks.h"
 #include "browsingchecks.h"
+#include "compatibilitychecks.h"
 #include <core/plugins/plugin.h>
 #include <core/coresettings.h>
 #include <core/plugins/coreplugin.h>
@@ -123,8 +124,21 @@ private:
 
     void checkControl()
     {
+        const auto phase = qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE");
         auto* command = m_actions ? m_actions->command("SessionLock.Toggle") : nullptr;
         auto* action = command ? command->action() : nullptr;
+        if(phase == QStringLiteral("disabled")) {
+            auto* normal = m_playlists->playlistByName(QStringLiteral("SessionLock smoke unlocked"));
+            auto* prelocked = m_playlists->playlistByName(QStringLiteral("SessionLock smoke prelocked"));
+            if(command || !normal || normal->isLocked() || !prelocked || !prelocked->isLocked()
+               || !m_core->settingsManager->value(QStringLiteral("Playlist/PlaybackFollowsCursor")).toBool()
+               || !setSessionLockEnabled(m_core->settingsManager, true)) {
+                fail("disabled restart or settings-page re-enable failed"); return;
+            }
+            qInfo("Session Lock smoke: disabled host has restored originals and re-enabled the plugin for restart");
+            QCoreApplication::quit();
+            return;
+        }
         if(action && !action->isEnabled() && ++m_attempts < 100) {
             QTimer::singleShot(10, this, &LockSmokeDriver::checkControl);
             return;
@@ -132,6 +146,30 @@ private:
         if(!action || !action->isEnabled() || action->isChecked() || !command->defaultShortcuts().empty()) {
             qCritical("Session Lock smoke: toggle not ready/unlocked or has a default shortcut");
             QCoreApplication::exit(1);
+            return;
+        }
+        if(phase == QStringLiteral("disable") || phase == QStringLiteral("reenabled")) {
+            auto* normal = m_playlists->playlistByName(QStringLiteral("SessionLock smoke unlocked"));
+            auto* prelocked = m_playlists->playlistByName(QStringLiteral("SessionLock smoke prelocked"));
+            if(!normal || normal->isLocked() || !prelocked || !prelocked->isLocked()) {
+                fail("restart did not preserve original playlist locks"); return;
+            }
+            action->trigger();
+            if(!action->isChecked() || !normal->isLocked()) { fail("restart lock failed"); return; }
+            if(phase == QStringLiteral("disable")) {
+                if(!setSessionLockEnabled(m_core->settingsManager, false) || !action->isChecked()) {
+                    fail("settings-page disable did not retain the current session until restart"); return;
+                }
+                qInfo("Session Lock smoke: settings-page disable applied while locked; awaiting restart");
+            }
+            else {
+                action->trigger();
+                if(action->isChecked() || normal->isLocked() || !prelocked->isLocked()) {
+                    fail("re-enabled plugin did not restore originals"); return;
+                }
+                qInfo("Session Lock smoke: re-enabled host starts unlocked and locks/unlocks successfully");
+            }
+            QCoreApplication::quit();
             return;
         }
         const bool recoveryRun = qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") == QStringLiteral("recover");
@@ -189,6 +227,7 @@ private:
         int triggers = 0;
         QObject probe;
         const auto connection = connect(source, &QAction::triggered, &probe, [&triggers]() { ++triggers; });
+        if(!checkGlobalHotkeys(m_actions, action)) { fail("native Global Hotkeys checks failed"); return; }
         if(!checkWidgetInputInfrastructure(m_widgets)) { fail("widget input infrastructure checks failed"); return; }
         if(!checkSeekInputs(m_widgets, m_player, action, m_core->settingsManager)) {
             fail("production seeking/transition checks failed"); return;

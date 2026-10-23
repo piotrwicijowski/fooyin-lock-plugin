@@ -75,8 +75,8 @@ host settings edit while locked are regression-tested.
 Playback/Playback Queue settings pages also contain direct Apply/Reset writes to
 stop-after and queue-mode settings. Those configuration pages are not among ticket
 001's named protected surfaces; registered playback-menu actions remain covered.
-Their direct configuration routes are not advertised as locked. Ticket 011 must
-make this boundary explicit in the final compatibility matrix. There is no
+Their direct configuration routes are not advertised as locked. The
+[compatibility matrix](compatibility.md) records this boundary explicitly. There is no
 after-the-fact resetting of queue mode, stop-after, or natural playback state.
 
 ## Recovery and teardown evidence
@@ -133,5 +133,7 @@ The new actual-host checks caught the typed/Variant cursor subscription mismatch
 fixed above. Fixture corrections used the registered `PlaybackQueue` factory key,
 drop-enabled receivers, GUI-time subscription setup and the actual module settings
 path in the isolated unload profile. These are fixture prerequisites, not extra
-production host workarounds. Native platform gestures, host disable/re-enable and
-the final compatibility matrix remain ticket 011.
+production host workarounds. Ticket 011 now records a
+[compatibility matrix](compatibility.md), including actual host settings-page
+disable/re-enable across restarts and native X11 Global Hotkeys verification.
+Desktop drag/grab UX and decoded Wavebar mouse-preview sign-off remain open.

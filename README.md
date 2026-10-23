@@ -23,9 +23,12 @@ and selection/search-generated playlist writes while retaining selection, live
 library/filter searching and viewed-playlist switching. Temporary settings and
 saved layout overrides have interrupted-session recovery.
 [Coordinated transitions](docs/transitions.md) retain input/action protection through
-restoration and recover safely after repeated interruption. Assembled compatibility
-validation remains in [ticket 011](.plan/011-validate-supported-interactions.md); this
-development version is not yet a complete session lock.
+restoration and recover safely after repeated interruption. The
+[tested compatibility matrix](docs/compatibility.md) records assembled automated
+checks, native X11 Global Hotkeys dispatch and host disable/re-enable across
+restarts. Native desktop drag/grab behavior and decoded Wavebar mouse previews
+still need sign-off in [ticket 011](.plan/011-validate-supported-interactions.md);
+this development version is not yet a complete session lock.
 The approved scope is recorded in the
 [behavior contract](.plan/001-decide-lock-policy.md#approved-behavior-contract).
 
@@ -45,7 +48,8 @@ The initial target is fooyin commit
 `bb8d9f0371b254571fffec310dce3ee1ce005c87` (0.13.1). Use the same Qt/compiler ABI
 for the host and plugin. See [verification evidence](docs/verification.md) for the
 actual toolchain and commands used; a release compatibility range is not yet
-established.
+established. See the [tested widget/plugin matrix and limitations](docs/compatibility.md)
+before relying on a particular integration.
 
 ## Build and install
 
@@ -119,8 +123,13 @@ second host while locked, interrupts a third during startup recovery, and restar
 the same profile to verify repeatable restoration and journal acknowledgement.
 The browsing checks also exercise populated library/filter models, colliding result
 names, live search, search modes and Quick Search show-all, and saved-layout recovery.
-It does not need an audio device or
-a display server. The lifecycle test separately exercises actual `QPluginLoader`
+Three further processes exercise the actual Plugins settings page: disable while
+locked, restart disabled with original playlist states restored, and re-enable for
+another unlocked startup and successful lock/unlock. The optional
+[X11 run](docs/compatibility.md#reproduce-the-automated-verification) adds native
+Global Hotkeys delivery with `--platform xcb --global-hotkeys /path/to/module.so`.
+The default offscreen run needs no audio device or display server.
+The lifecycle test separately exercises actual `QPluginLoader`
 unload with Qt's default unload-prevention hint cleared.
 
 To verify the **installed** artifact explicitly:
@@ -147,6 +156,7 @@ Debug lifecycle messages are available with
 - [Safe browsing, generated playlists, search modes and settings recovery](docs/browsing-protection.md)
 - [Transition ordering, in-flight work, repeated recovery and teardown](docs/transitions.md)
 - [Build and runtime verification evidence](docs/verification.md)
+- [Tested compatibility matrix, boundaries and remaining manual sign-off](docs/compatibility.md)
 
 Keep project includes restricted to fooyin's installed public headers. Add focused
 coordinator/action/filter tests to `tests/` as the corresponding tickets land.
