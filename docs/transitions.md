@@ -2,9 +2,11 @@
 
 Ticket 010 completes transition hardening at fooyin
 `bb8d9f0371b254571fffec310dce3ee1ce005c87` (0.13.1), Linux/Qt. The
-[approved submission boundary](../.plan/001-decide-lock-policy.md#6-lock-entry-boundary-and-in-flight-work)
-remains authoritative: locking prevents new protected GUI requests as each guard
-becomes active; it does not undo work already submitted to the host.
+[approved gesture boundary](../.plan/001-decide-lock-policy.md#6-lock-entry-boundary-and-in-flight-work)
+was revised on 2026-10-23: required protection covers actions and gestures started
+after **Locked** is shown, while the lock remains active. Pre-lock gestures and
+submitted work are outside that guarantee. Existing cancellation mechanisms and
+transition checks below describe additional best-effort handling.
 
 ## Entry and restoration ordering
 
@@ -51,7 +53,7 @@ no applied ephemeral guards and never resumes the interrupted session lock.
 | --- | --- |
 | Built-in/Spectrogram seek preview | UngrabMouse cancels synchronously. Unlock-before-release cannot revive it, including while paused. Actual-host checks cover the controls; Wavebar mouse cancellation retains the protocol-fixture/source-audit boundary documented in [seeking protection](seeking-protection.md). |
 | Accepted drag or held activation input | Remaining protected enter/move/drop, middle-button and activation-key phases are consumed. DragLeave remains deliverable for the host's hover/indicator cleanup. New drags are inhibited through public view properties. The real-host test seeds an accepted queue drag alongside active seek previews and probes input during cursor-setting entry/restoration callbacks. |
-| Native drag loop and grab UX | No application-wide `QDrag::cancel()` is issued: the public API does not identify a globally active drag's ownership reliably. An existing native loop/cursor may remain until release/Escape; protected drop delivery is rejected. Offscreen checks establish event ordering, not compositor/native grab or drop-indicator appearance. Ticket 011 owns interactive platform validation. |
+| Native drag loop and grab UX | No application-wide `QDrag::cancel()` is issued: the public API does not identify a globally active drag's ownership reliably. A pre-lock native loop/cursor may remain until release/Escape; filtering its continuation is best effort. Lock shortcut dispatch during a native drag is not required. Offscreen checks establish event ordering, not compositor/native grab or drop-indicator appearance. Ticket 011 validates attempts started while already locked and their cleanup. |
 | Delayed middle-click callback | Baseline `ExpandedTreeView::mousePressEvent()` queues `middleClicked`. A pre-filter press may execute its callback after locking. New presses are consumed before submission. This is source-audited; no arbitrary queued metacalls are discarded. |
 | Cursor-follow schedule | An already scheduled track is preserved and may play naturally. New selection scheduling is suppressed. Actual tree/filter browsing checks verify the schedule/source/index boundary. |
 | Playback request waiting for the engine | May commit after Locked. The real public controller test queues engine-boundary commits before entry and verifies that the current track is not restored to an obsolete snapshot. |
@@ -136,4 +138,8 @@ path in the isolated unload profile. These are fixture prerequisites, not extra
 production host workarounds. Ticket 011 now records a
 [compatibility matrix](compatibility.md), including actual host settings-page
 disable/re-enable across restarts and native X11 Global Hotkeys verification.
-Desktop drag/grab UX and decoded Wavebar mouse-preview sign-off remain open.
+The user subsequently reported native drag/drop and Wavebar mouse/scroll/keyboard
+seek prevention passing while already locked on fooyin 0.14.0, latest Session Lock
+`master`, Arch Linux/Wayland and Qt 6.12.0, with a rendered waveform. The manual
+sign-off and setup are recorded in the compatibility matrix, completing ticket 011.
+Mid-gesture locking/unlocking is not required.

@@ -22,10 +22,10 @@ the lock on from the Playback menu, then turn it off when you want to make chang
 
 For installation from source, see the [build and installation guide](docs/BUILDING.md).
 
-The current tested fooyin version is **0.14.0**. Session Lock is still in
-development: desktop drag-and-drop behavior and Wavebar mouse seeking need
-further checking. See [compatibility and known limitations](docs/compatibility.md)
-for details.
+Manual drag-and-drop and rendered Wavebar seeking checks passed on **fooyin
+0.14.0**, **Arch Linux/Wayland**, and **Qt 6.12.0**. The automated test suite uses a
+pinned fooyin **0.13.1** baseline. See
+[compatibility and known limitations](docs/compatibility.md) for coverage details.
 
 ## Getting started
 
@@ -73,7 +73,7 @@ application log. A new lock can only start after recovery succeeds.
 ## Further documentation
 
 - [Building and installing](docs/BUILDING.md) — requirements, source builds, installation paths, testing, and developer references.
-- [Compatibility and known limitations](docs/compatibility.md) — tested fooyin setup, supported controls, and remaining checks.
+- [Compatibility and known limitations](docs/compatibility.md) — tested fooyin setups, supported controls, and verification evidence.
 - [How the lock works](docs/architecture.md) — technical overview for contributors.
 
 ## License

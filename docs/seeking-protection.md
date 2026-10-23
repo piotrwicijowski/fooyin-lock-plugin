@@ -24,6 +24,10 @@ replacement are resolved on the first input without a queued scan.
 
 ## Entry, cancellation and cleanup
 
+Required protection covers gestures started after **Locked** is shown, while the
+lock remains active. The cancellation behavior below is additional best-effort
+handling for pre-lock gestures, not a requirement to lock during a held preview.
+
 Each of the three controls handles `UngrabMouse`, `WindowDeactivate` and `Hide` by
 clearing its seek preview and tooltip without submitting a seek. At entry,
 `SeekGuard` first installs its filter, then sends `UngrabMouse` to existing named
@@ -96,8 +100,10 @@ The decoder-free Wavebar fixture has no waveform data, so its mouse preview is
 verified by handler audit plus isolated protocol fixtures and actual-host event
 ordering; the host test does not claim a decoded-waveform drag or pixel comparison.
 The same release/cancellation protocol is explicit in its audited handlers.
-Native window-system drag/grab integration remains an assembled-lifecycle check in
-010/011.
+The user subsequently reported Wavebar mouse clicking, scrolling and keyboard seeking
+prevented while already locked, with a rendered waveform on fooyin 0.14.0, latest
+Session Lock `master`, Arch Linux/Wayland and Qt 6.12.0. This manual sign-off completes
+the outstanding Wavebar check in 011. Mid-preview locking/unlocking is not required.
 
 ### Ticket 008 verification — 2026-10-23
 

@@ -63,6 +63,10 @@ recovery records are introduced.
 
 ## Natural playback and transition boundary
 
+Required protection covers actions and gestures started after **Locked** is shown,
+while the lock remains active. Pre-lock gestures and their continuations are outside
+the guarantee; the remaining-event filtering below is additional best-effort handling.
+
 The guards never intercept controller progression, engine notifications, queue
 signals, or model updates. They do not snapshot or restore transport, position,
 playlist current index or queue contents. Natural-end progression consumes queue
