@@ -237,7 +237,7 @@ bool PlaylistGuard::enter(RecoveryJournal& journal, QString& error)
     // deliberately leaves general search/text editors alone.
     for(auto* widget : QApplication::allWidgets()) {
         if(widget->inherits("Fooyin::PopupLineEdit")
-           && WidgetInputFilter::surface(widget) != WidgetInputFilter::Surface::Unknown) {
+           && WidgetInputFilter::isPlaylistSurface(WidgetInputFilter::surface(widget))) {
             QKeyEvent cancel{QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier};
             QCoreApplication::sendEvent(widget, &cancel);
         }
@@ -328,7 +328,7 @@ void PlaylistGuard::inhibitEditor(QAbstractItemView* view)
 bool PlaylistGuard::filter(QWidget* widget, WidgetInputFilter::Surface surface, QEvent* event)
 {
     using Surface = WidgetInputFilter::Surface;
-    if(surface == Surface::Unknown) return false;
+    if(!WidgetInputFilter::isPlaylistSurface(surface)) return false;
     // A menu opened before locking can still contain unregistered commands.
     if(surface != Surface::Playlist && qobject_cast<QMenu*>(widget)) {
         switch(event->type()) {

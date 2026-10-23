@@ -7,3 +7,4 @@ FINDINGS.md
 docs/*
 !docs/registered-actions.md
 !docs/playlist-protection.md
+!docs/widget-input.md

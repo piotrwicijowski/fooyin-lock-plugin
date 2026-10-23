@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "widgetinputchecks.h"
 #include <core/plugins/plugin.h>
 #include <core/plugins/coreplugin.h>
 #include <core/playlist/playlisthandler.h>
@@ -153,6 +154,7 @@ private:
             return;
         }
         if(!normal->isLocked() || !prelocked->isLocked()) { fail("regular playlist locks not applied"); return; }
+        if(!checkWidgetInputInfrastructure(m_widgets)) { fail("widget input infrastructure checks failed"); return; }
         if(!checkInputs(existing)) return;
         QWidget* content{nullptr};
         for(auto* candidate : QApplication::allWidgets()) {

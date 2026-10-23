@@ -19,6 +19,13 @@ target_link_libraries(lock_playlist_test PRIVATE LockRuntime Qt6::Test)
 add_test(NAME lock.playlists COMMAND lock_playlist_test)
 set_tests_properties(lock.playlists PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
 
+add_executable(lock_widget_input_test widgetinputfiltertest.cpp ../src/widgetinputfilter.cpp)
+target_include_directories(lock_widget_input_test PRIVATE ../src)
+target_link_libraries(lock_widget_input_test PRIVATE Qt6::Widgets Qt6::Test)
+target_compile_definitions(lock_widget_input_test PRIVATE QT_NO_KEYWORDS)
+add_test(NAME lock.widget-input COMMAND lock_widget_input_test)
+set_tests_properties(lock.widget-input PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
 # A separate, opt-in driver closes the real host via QApplication::quit().
 # It is never part of the installed production plugin.
 add_subdirectory(hostdriver)

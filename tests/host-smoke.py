@@ -15,8 +15,10 @@ def main():
     parser.add_argument("--host", required=True, type=Path)
     parser.add_argument("--plugin", required=True, type=Path)
     parser.add_argument("--driver", required=True, type=Path)
+    parser.add_argument("--optional-plugin", action="append", default=[], type=Path,
+                        help="Load matching wavebar/spectrogram modules (supply both to verify optional widgets)")
     args = parser.parse_args()
-    for path in (args.host, args.plugin, args.driver):
+    for path in (args.host, args.plugin, args.driver, *args.optional_plugin):
         if not path.is_file():
             parser.error(f"File does not exist: {path}")
 
@@ -25,7 +27,7 @@ def main():
         plugins = home / "plugins"
         plugins.mkdir()
         # Only the requested modules are added to the host's search path.
-        for module in (args.plugin, args.driver):
+        for module in (args.plugin, args.driver, *args.optional_plugin):
             shutil.copy2(module, plugins / module.name)
         runtime = home / "runtime"
         runtime.mkdir(mode=0o700)
@@ -42,11 +44,13 @@ def main():
             "QT_MESSAGE_PATTERN": "%{category}: %{message}",
             "FOOYIN_PLUGIN_PATH": str(plugins),
             "FOOYIN_LOCK_SMOKE_TEST": "1",
+            "FOOYIN_LOCK_SMOKE_OPTIONAL_WIDGETS": "1" if args.optional_plugin else "0",
         })
         full_sequence = (
             "fy.sessionlock: Core services acquired",
             "fy.sessionlock: GUI services acquired",
             "Session Lock smoke: host event loop reached",
+            "Session Lock smoke: queue/library/filter/search/seek discovery, rules, ordering, and teardown verified",
             "Session Lock smoke: protected proxies/sources, refresh, late registration, and host-state restoration verified",
             "Session Lock smoke: playlist locks, parent/viewport input ordering, late/replaced widgets, and restoration verified",
             "Session Lock smoke: registered toggle locked, unlocked, and relocked for shutdown",
@@ -75,6 +79,10 @@ def main():
                             "Session Lock smoke: interrupted playlist locks recovered after restart", full_sequence[-1])
             else:
                 expected = full_sequence
+            if args.optional_plugin and phase != "recover":
+                optional_marker = "Session Lock smoke: optional wavebar/spectrogram discovery and input roles verified"
+                if result.stdout.count(optional_marker) != 1:
+                    raise SystemExit("FAIL: optional widget infrastructure was not verified")
             for message in expected:
                 if result.stdout.count(message) != 1:
                     raise SystemExit(f"FAIL: expected exactly one occurrence of {message!r}")
