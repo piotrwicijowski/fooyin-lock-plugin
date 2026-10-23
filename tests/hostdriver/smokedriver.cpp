@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "widgetinputchecks.h"
 #include "playbackchecks.h"
+#include "seekchecks.h"
 #include <core/plugins/plugin.h>
 #include <core/plugins/coreplugin.h>
 #include <core/playlist/playlisthandler.h>
@@ -154,6 +155,7 @@ private:
         QObject probe;
         const auto connection = connect(source, &QAction::triggered, &probe, [&triggers]() { ++triggers; });
         if(!checkWidgetInputInfrastructure(m_widgets)) { fail("widget input infrastructure checks failed"); return; }
+        if(!checkSeekInputs(m_widgets, m_player, action)) { fail("production seeking checks failed"); return; }
         action->trigger();
         if(!action->isChecked() || !action->isEnabled() || !action->text().contains(QStringLiteral("Locked"))) {
             qCritical("Session Lock smoke: lock transition/indicator failed");

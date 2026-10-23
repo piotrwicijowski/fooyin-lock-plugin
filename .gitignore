@@ -9,3 +9,4 @@ docs/*
 !docs/playlist-protection.md
 !docs/widget-input.md
 !docs/playback-protection.md
+!docs/seeking-protection.md

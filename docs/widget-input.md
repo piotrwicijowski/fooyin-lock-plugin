@@ -6,8 +6,9 @@ Qt 6.8.2, fooyin 0.13.1 commit `bb8d9f0371b254571fffec310dce3ee1ce005c87`.
 `WidgetInputFilter` provides dispatch-time discovery and reusable input candidates.
 `PlaylistGuard` uses it for playlist rules; `PlaybackGuard` consumes activation and
 drop candidates, and ActionGuard discovers direct actions before root/menu input.
-See the [production playback policy](playback-protection.md). Seeking/search-write
-candidates and settings-side-effect handling remain integration points for 008–009.
+See the [production playback policy](playback-protection.md). `SeekGuard` consumes
+seek candidates and cancels previews; see [seeking protection](seeking-protection.md).
+Search-write candidates and settings-side-effect handling remain integration points for 009.
 
 ## Identification matrix
 
@@ -94,8 +95,10 @@ before the coordinator reports Locked. Other plugins' application-level filters
 can run earlier and are outside the receiver-ordering guarantee.
 
 The predicates match a protected release even if its press occurred before
-installation. They do not clear private host gesture state or undo a request
-already submitted. Ticket 008/010 owns complete seek/drag transition cleanup.
+installation. Predicates alone do not clear host gesture state or undo a request
+already submitted. SeekGuard additionally sends the audited UngrabMouse cancellation
+event at entry and before consuming protected input. Ticket 010 integrates the
+assembled seek/drag transition lifecycle.
 
 ## Audit sources and verification
 

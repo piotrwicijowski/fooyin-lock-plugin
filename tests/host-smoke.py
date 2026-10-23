@@ -51,6 +51,7 @@ def main():
             "fy.sessionlock: GUI services acquired",
             "Session Lock smoke: host event loop reached",
             "Session Lock smoke: queue/library/filter/search/seek discovery, rules, ordering, and teardown verified",
+            "Session Lock smoke: production seeking, preview cancellation, progress, track capability, and recreation verified",
             "Session Lock smoke: production playback gestures, direct menu actions, queue drops, and browsing verified",
             "Session Lock smoke: protected proxies/sources, refresh, late registration, and host-state restoration verified",
             "Session Lock smoke: playlist locks, parent/viewport input ordering, late/replaced widgets, and restoration verified",
