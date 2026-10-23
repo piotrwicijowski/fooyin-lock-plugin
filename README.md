@@ -22,8 +22,10 @@ active previews at lock entry while preserving progress and track capability.
 and selection/search-generated playlist writes while retaining selection, live
 library/filter searching and viewed-playlist switching. Temporary settings and
 saved layout overrides have interrupted-session recovery.
-Transition hardening and assembled validation remain in [tickets 010–011](.plan/INDEX.md); this development
-version is not yet a complete session lock.
+[Coordinated transitions](docs/transitions.md) retain input/action protection through
+restoration and recover safely after repeated interruption. Assembled compatibility
+validation remains in [ticket 011](.plan/011-validate-supported-interactions.md); this
+development version is not yet a complete session lock.
 The approved scope is recorded in the
 [behavior contract](.plan/001-decide-lock-policy.md#approved-behavior-contract).
 
@@ -113,8 +115,8 @@ shutdown while locked. It verifies core/GUI initialisation, registered-proxy
 lock/unlock/relock transitions, protected proxy/source actions, host refreshes,
 late registration, current-state restoration, concrete playlist locks, targeted
 parent/viewport input filtering, and late/replaced widgets. It then hard-exits a
-second host while locked and restarts the same profile to verify interrupted-session
-recovery and journal acknowledgement.
+second host while locked, interrupts a third during startup recovery, and restarts
+the same profile to verify repeatable restoration and journal acknowledgement.
 The browsing checks also exercise populated library/filter models, colliding result
 names, live search, search modes and Quick Search show-all, and saved-layout recovery.
 It does not need an audio device or
@@ -143,6 +145,7 @@ Debug lifecycle messages are available with
 - [Playback gestures, direct menu actions and queue drops](docs/playback-protection.md)
 - [Seeking controls, preview cancellation and supported matrix](docs/seeking-protection.md)
 - [Safe browsing, generated playlists, search modes and settings recovery](docs/browsing-protection.md)
+- [Transition ordering, in-flight work, repeated recovery and teardown](docs/transitions.md)
 - [Build and runtime verification evidence](docs/verification.md)
 
 Keep project includes restricted to fooyin's installed public headers. Add focused

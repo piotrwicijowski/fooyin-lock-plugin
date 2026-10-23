@@ -2,6 +2,7 @@
 #include "browsingguard.h"
 
 #include <gui/fywidget.h>
+#include <gui/guisettings.h>
 #include <gui/layout/layoutprovider.h>
 #include <utils/settings/settingsmanager.h>
 
@@ -69,16 +70,21 @@ private Q_SLOTS:
     void cursorRestoration_data()
     {
         QTest::addColumn<bool>("original");
-        QTest::newRow("enabled") << true;
-        QTest::newRow("disabled-default") << false;
+        QTest::addColumn<bool>("typed");
+        QTest::newRow("enabled") << true << false;
+        QTest::newRow("disabled-default") << false << false;
+        QTest::newRow("typed-enabled") << true << true;
+        QTest::newRow("typed-disabled-default") << false << true;
     }
     void cursorRestoration()
     {
         QFETCH(bool, original);
+        QFETCH(bool, typed);
         QTemporaryDir directory;
         const auto path = directory.filePath(QStringLiteral("settings.ini"));
         SettingsManager settings{path};
-        settings.createSetting(CursorKey, original);
+        if(typed) settings.createSetting<Settings::Gui::PlaybackFollowsCursor>(original, CursorKey);
+        else settings.createSetting(CursorKey, original);
         LockCoordinator coordinator{directory.filePath(QStringLiteral("recovery.json"))};
         QVERIFY(coordinator.addGuard(std::make_unique<BrowsingGuard>(&settings, nullptr, path, directory.path())));
         QVERIFY(coordinator.recover());

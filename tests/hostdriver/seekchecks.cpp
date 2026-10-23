@@ -4,13 +4,20 @@
 
 #include <core/player/playercontroller.h>
 #include <gui/fywidget.h>
+#include <gui/guisettings.h>
 #include <gui/widgetprovider.h>
+#include <utils/settings/settingsmanager.h>
 
 #include <QAction>
 #include <QApplication>
+#include <QAbstractItemView>
+#include <QContextMenuEvent>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QMimeData>
 #include <QSlider>
 #include <QWheelEvent>
 
@@ -100,7 +107,8 @@ bool blocked(QWidget* widget)
 }
 }
 
-bool checkSeekInputs(Fooyin::WidgetProvider* provider, Fooyin::PlayerController* player, QAction* toggle)
+bool checkSeekInputs(Fooyin::WidgetProvider* provider, Fooyin::PlayerController* player, QAction* toggle,
+                     Fooyin::SettingsManager* settings)
 {
     // Model engine notifications through the installed public API, without
     // requesting playback or requiring a decoder/audio output device.
@@ -137,8 +145,63 @@ bool checkSeekInputs(Fooyin::WidgetProvider* provider, Fooyin::PlayerController*
         }
         mouse(target, QEvent::MouseButtonPress); // Leave an active preview across entry.
     }
+    // Mix active seek previews with an already accepted drag. Cursor restoration
+    // is a synchronous callback inside coordinator recovery, before barriers may
+    // be released. Probe actual host receivers at that precise transition point.
+    std::unique_ptr<Fooyin::FyWidget> queue{provider->createWidget(QStringLiteral("PlaybackQueue"))};
+    std::unique_ptr<Fooyin::FyWidget> tabs{provider->createWidget(QStringLiteral("PlaylistTabs"))};
+    auto* view = queue ? queue->findChild<QAbstractItemView*>() : nullptr;
+    if(!view || !tabs) { qCritical("Transition queue/tabs fixture missing"); return false; }
+    view->viewport()->setAcceptDrops(true);
+    QMimeData payload;
+    payload.setUrls({QUrl::fromLocalFile(QStringLiteral("/tmp/session-lock-pending.flac"))});
+    class AcceptDrag : public QObject
+    {
+    public:
+        bool eventFilter(QObject*, QEvent* event) override
+        {
+            if(event->type() != QEvent::DragEnter) return false;
+            static_cast<QDragEnterEvent*>(event)->acceptProposedAction();
+            return true;
+        }
+    } acceptDrag;
+    view->viewport()->installEventFilter(&acceptDrag);
+    QDragEnterEvent enter{QPoint{2, 2}, Qt::CopyAction, &payload, Qt::LeftButton, Qt::NoModifier};
+    QCoreApplication::sendEvent(view->viewport(), &enter);
+    view->viewport()->removeEventFilter(&acceptDrag);
+    if(!enter.isAccepted()) { qCritical("Transition drag fixture was not accepted"); return false; }
+    const QString cursorKey = QStringLiteral("Playlist/PlaybackFollowsCursor");
+    settings->set(cursorKey, true);
+    bool transitionInputsBlocked = true;
+    int transitionChecks = 0;
+    settings->subscribe<Fooyin::Settings::Gui::PlaybackFollowsCursor>(&receiver, [&](bool value) {
+        ++transitionChecks;
+        Probe probe;
+        QKeyEvent seek{QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier};
+        QKeyEvent activate{QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier};
+        QDropEvent drop{QPointF{2, 2}, Qt::CopyAction, &payload, Qt::LeftButton, Qt::NoModifier};
+        const bool seekDelivered = probe.reaches(control(roots.front().get()), seek);
+        const bool activationDelivered = probe.reaches(view->viewport(), activate);
+        const bool dropDelivered = probe.reaches(view->viewport(), drop);
+        if(seekDelivered || activationDelivered || dropDelivered || drop.isAccepted()) {
+            qCritical() << "Transition input delivery:" << value << seekDelivered << activationDelivered
+                        << dropDelivered << drop.isAccepted();
+            transitionInputsBlocked = false;
+        }
+        if(value) {
+            QContextMenuEvent edit{QContextMenuEvent::Mouse, QPoint{2, 2}, QPoint{2, 2}};
+            if(probe.reaches(tabs.get(), edit)) {
+                qCritical("Playlist input barrier released before settings restoration");
+                transitionInputsBlocked = false;
+            }
+        }
+    });
     toggle->trigger();
     if(!toggle->isChecked()) return false;
+    settings->set(cursorKey, true); // Same typed setting route as Playback settings Apply.
+    if(settings->value(cursorKey).toBool()) {
+        qCritical("Typed host cursor-follow setting escaped enforcement"); return false;
+    }
     const int before = seeks;
     for(const auto& root : roots) {
         if(auto* slider = qobject_cast<QSlider*>(control(root.get())); slider && slider->isSliderDown()) return false;
@@ -197,8 +260,13 @@ bool checkSeekInputs(Fooyin::WidgetProvider* provider, Fooyin::PlayerController*
     if(toggle->isChecked() || player->currentTrackSeekable() || slider->isEnabled()) return false;
     player->setCurrentTrackSeekable(true); // A subsequent engine update remains authoritative.
     if(!slider->isEnabled()) return false;
+    settings->unsubscribe(cursorKey, &receiver);
+    if(!transitionInputsBlocked || transitionChecks < 4) {
+        qCritical("Input became usable during persistent entry/restoration"); return false;
+    }
     roots.clear();
     player->syncPlayStateFromEngine(Fooyin::Player::PlayState::Stopped);
     qInfo("Session Lock smoke: production seeking, preview cancellation, progress, track capability, and recreation verified");
+    qInfo("Session Lock smoke: mixed seek/accepted-drag transitions retain input barriers through restoration");
     return true;
 }

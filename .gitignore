@@ -11,3 +11,4 @@ docs/*
 !docs/playback-protection.md
 !docs/seeking-protection.md
 !docs/browsing-protection.md
+!docs/transitions.md

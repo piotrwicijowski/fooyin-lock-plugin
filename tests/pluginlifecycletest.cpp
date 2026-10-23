@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "contexts.h"
 #include "lockruntime.h"
+#include "playlisthost.h"
 
 #include <core/plugins/coreplugin.h>
 #include <core/plugins/plugin.h>
+#include <core/coresettings.h>
 #include <gui/plugins/guiplugin.h>
+#include <gui/guiconstants.h>
 #include <utils/actions/actionmanager.h>
+#include <utils/actions/command.h>
 #include <utils/settings/settingsmanager.h>
 
 #include <QApplication>
+#include <QAction>
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QMainWindow>
@@ -176,10 +181,61 @@ private Q_SLOTS:
         QVERIFY(loader.unload());
         QCOMPARE(messages.count(QStringLiteral("Shutdown complete")), 1);
     }
+
+    void unloadWhileLocked()
+    {
+        PlaylistHost host;
+        SettingsManager settings{FySettings{}.fileName()};
+        const QString cursorKey = QStringLiteral("Playlist/PlaybackFollowsCursor");
+        settings.createSetting(cursorKey, true);
+        auto* normal = host.handler->createPlaylist(QStringLiteral("Unload unlocked"));
+        auto* prelocked = host.handler->createPlaylist(QStringLiteral("Unload prelocked"));
+        host.handler->setPlaylistLocked(prelocked->id(), true);
+        host.handler->savePlaylist(prelocked->id());
+        ActionManager actions{&settings};
+        QMainWindow window;
+        actions.setMainWindow(&window);
+        QPluginLoader loader{pluginPath};
+        loader.setLoadHints({});
+        QPointer<QObject> root{loader.instance()};
+        QVERIFY2(root, qPrintable(loader.errorString()));
+        auto core = host.context();
+        core.settingsManager = &settings;
+        qobject_cast<CorePlugin*>(root)->initialise(core);
+        auto gui = guiContext();
+        gui.actionManager = &actions;
+        qobject_cast<GuiPlugin*>(root)->initialise(gui);
+        Q_EMIT host.handler->playlistsPopulated();
+        auto* command = actions.command(ToggleActionId);
+        QVERIFY(command);
+        command->setCurrentContext(Context{Constants::Context::Global});
+        QTRY_VERIFY(command->action()->isEnabled());
+        command->action()->trigger();
+        QVERIFY(command->action()->isChecked());
+        QVERIFY(normal->isLocked());
+        QCOMPARE(settings.value(cursorKey), QVariant{false});
+        QPointer<QAction> source{command->actionForContext(Constants::Context::Global)};
+        bool callbackCalled = false;
+        QTimer::singleShot(0, source, [&]() { callbackCalled = true; });
+        QVERIFY(loader.unload());
+        QVERIFY(root.isNull());
+        QVERIFY(source.isNull());
+        QVERIFY(!actions.command(ToggleActionId));
+        QVERIFY(!normal->isLocked());
+        QVERIFY(prelocked->isLocked());
+        QCOMPARE(settings.value(cursorKey), QVariant{true});
+        QCoreApplication::processEvents();
+        QVERIFY(!callbackCalled);
+        QCOMPARE(messages.count(QStringLiteral("Shutdown complete")), 1);
+    }
 };
 
 int main(int argc, char** argv)
 {
+    QTemporaryDir profile;
+    if(!profile.isValid()) return 1;
+    qputenv("XDG_STATE_HOME", profile.path().toUtf8());
+    qputenv("XDG_CONFIG_HOME", profile.path().toUtf8());
     QApplication app{argc, argv};
     if(argc < 2) {
         qCritical("Pass the plugin library path as the first argument");

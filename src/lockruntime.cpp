@@ -79,14 +79,15 @@ bool LockRuntime::initialiseGui(const GuiPluginContext& context)
     m_services.currentPlaylist = context.playlistSelection;
     m_guiInitialised           = true;
     m_coordinator->addGuard(std::make_unique<ActionGuard>(m_services.actions));
+    // Establish input barriers before persistent setters can emit host callbacks.
+    m_coordinator->addGuard(std::make_unique<PlaybackGuard>());
+    m_coordinator->addGuard(std::make_unique<SeekGuard>());
     auto browsing = std::make_unique<BrowsingGuard>(m_services.settings, context.layoutProvider, m_settingsPath);
     connect(browsing.get(), &BrowsingGuard::protectionFailed, m_coordinator.get(), &LockCoordinator::failProtection);
     m_coordinator->addGuard(std::move(browsing));
     auto playlists = std::make_unique<PlaylistGuard>(m_services.playlists, m_services.database);
     connect(playlists.get(), &PlaylistGuard::protectionFailed, m_coordinator.get(), &LockCoordinator::failProtection);
     m_coordinator->addGuard(std::move(playlists));
-    m_coordinator->addGuard(std::make_unique<PlaybackGuard>());
-    m_coordinator->addGuard(std::make_unique<SeekGuard>());
     if(m_services.actions) {
         m_toggle = new QAction{this};
         m_toggle->setObjectName(QString::fromLatin1(ToggleActionId));

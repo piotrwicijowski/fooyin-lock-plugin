@@ -21,6 +21,8 @@ public:
     QString id() const override;
     bool enter(RecoveryJournal& journal, QString& error) override;
     bool leave(QString& error) override;
+    bool prepareRecovery(QString& error) override;
+    bool finishRecovery(QString& error) override { return leave(error); }
     bool recover(const RecoveryRecord& record, QString& error) override;
 
     // Ticket 009 must suppress generated writes/remaps even for autoplaylists;

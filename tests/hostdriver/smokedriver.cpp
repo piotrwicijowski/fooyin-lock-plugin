@@ -10,6 +10,7 @@
 #include <core/player/playercontroller.h>
 #include <gui/plugins/guiplugin.h>
 #include <gui/guiconstants.h>
+#include <gui/guisettings.h>
 #include <gui/fywidget.h>
 #include <gui/widgetprovider.h>
 #include <gui/layout/layoutprovider.h>
@@ -92,6 +93,18 @@ public:
             m_actions = context.actionManager;
             m_widgets = context.widgetProvider;
             m_gui = std::make_unique<Fooyin::GuiPluginContext>(context);
+            if(qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") == QStringLiteral("recover-interrupt")) {
+                // GUI settings are registered after core plugin initialisation.
+                m_core->settingsManager->subscribe<Fooyin::Settings::Gui::PlaybackFollowsCursor>(this,
+                    [](bool value) {
+                        if(value) {
+                            // Later playlist/layout records are acknowledged,
+                            // but this setter has not returned to its adapter.
+                            qInfo("Session Lock smoke: interrupting startup recovery before acknowledgement");
+                            std::_Exit(0);
+                        }
+                    });
+            }
             quitWhenReady();
         }
     }
@@ -122,6 +135,9 @@ private:
             return;
         }
         const bool recoveryRun = qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") == QStringLiteral("recover");
+        if(qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") == QStringLiteral("recover-interrupt")) {
+            fail("startup recovery did not reach the interruption hook"); return;
+        }
         if(qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") != QStringLiteral("normal")) {
             if(!m_core->settingsManager->value(QStringLiteral("Playlist/PlaybackFollowsCursor")).toBool()
                || Fooyin::FyStateSettings{}.value(QStringLiteral("Searching/QuickSearchState")).toJsonObject()
@@ -174,7 +190,9 @@ private:
         QObject probe;
         const auto connection = connect(source, &QAction::triggered, &probe, [&triggers]() { ++triggers; });
         if(!checkWidgetInputInfrastructure(m_widgets)) { fail("widget input infrastructure checks failed"); return; }
-        if(!checkSeekInputs(m_widgets, m_player, action)) { fail("production seeking checks failed"); return; }
+        if(!checkSeekInputs(m_widgets, m_player, action, m_core->settingsManager)) {
+            fail("production seeking/transition checks failed"); return;
+        }
         if(!checkBrowsing(*m_core, *m_gui, action)) { fail("production browsing checks failed"); return; }
         m_player->queueTracks(Fooyin::TrackList{first, second});
         action->trigger();

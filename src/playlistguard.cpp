@@ -258,12 +258,18 @@ bool PlaylistGuard::enter(RecoveryJournal& journal, QString& error)
     return true;
 }
 
-bool PlaylistGuard::leave(QString&)
+bool PlaylistGuard::prepareRecovery(QString&)
 {
-    m_filter.stop();
     for(const auto& connection : m_connections) disconnect(connection);
     m_connections.clear();
     m_journal = nullptr;
+    return true;
+}
+
+bool PlaylistGuard::leave(QString& error)
+{
+    prepareRecovery(error);
+    m_filter.stop();
     for(const auto& [_, editor] : m_editors) {
         if(editor.view && editor.view->editTriggers() == QAbstractItemView::NoEditTriggers)
             editor.view->setEditTriggers(editor.triggers);

@@ -28,6 +28,8 @@ public:
     [[nodiscard]] QString id() const override;
     bool enter(RecoveryJournal& journal, QString& error) override;
     bool leave(QString& error) override;
+    bool prepareRecovery(QString&) override { return true; }
+    bool finishRecovery(QString& error) override { return leave(error); }
     bool recover(const RecoveryRecord& record, QString& error) override;
 
 private:

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "lockcoordinator.h"
 
-#include <QScopedValueRollback>
+#include <QScopeGuard>
 
 #include <algorithm>
 #include <utility>
@@ -32,7 +32,8 @@ bool LockCoordinator::recover()
     if(m_busy || m_state == State::Shutdown || m_state == State::Locked) {
         return false;
     }
-    const QScopedValueRollback busy{m_busy, true};
+    m_busy = true;
+    const auto transition = qScopeGuard([this]() { finishTransition(); });
     changeState(State::Recovering);
     QString error;
     if(!m_loaded) {
@@ -58,15 +59,21 @@ bool LockCoordinator::setLocked(bool locked)
     if(m_state != State::Unlocked && m_state != State::Locked) {
         return false;
     }
-    const QScopedValueRollback busy{m_busy, true};
+    m_busy = true;
+    const auto transition = qScopeGuard([this]() { finishTransition(); });
     m_error.clear();
+    m_entryFailure.clear();
     changeState(locked ? State::Entering : State::Unlocking);
     QString error;
     if(locked) {
         for(const auto& guard : m_guards) {
             // Include the failing guard: entry can fail after partial changes.
             m_applied.push_back(guard.get());
-            if(!guard->enter(m_journal, error)) {
+            const bool entered = guard->enter(m_journal, error);
+            if(!entered || !m_entryFailure.isEmpty()) {
+                if(!m_entryFailure.isEmpty()) {
+                    error = error.isEmpty() ? m_entryFailure : error + QStringLiteral("; ") + m_entryFailure;
+                }
                 if(error.isEmpty()) {
                     error = QStringLiteral("Guard %1 could not apply restrictions").arg(guard->id());
                 }
@@ -77,8 +84,20 @@ bool LockCoordinator::setLocked(bool locked)
                            .arg(error, rollbackError.isEmpty() ? QString{} : QStringLiteral("; ") + rollbackError));
                 return false;
             }
+            if(m_shutdownRequested) return false; // Deferred shutdown owns rollback.
         }
         changeState(State::Locked);
+        // A synchronous Locked observer can discover a failed late target too.
+        if(!m_entryFailure.isEmpty()) {
+            QString rollbackError;
+            changeState(State::Unlocking);
+            const bool restored = restore(rollbackError);
+            changeState(restored ? State::Unlocked : State::RecoveryRequired);
+            report(QStringLiteral("Session Lock protection failed: %1%2")
+                       .arg(m_entryFailure, rollbackError.isEmpty() ? QString{} : QStringLiteral("; ") + rollbackError));
+            return false;
+        }
+        if(m_shutdownRequested) return false;
         return true;
     }
     const bool restored = restore(error);
@@ -91,6 +110,11 @@ bool LockCoordinator::setLocked(bool locked)
 
 void LockCoordinator::failProtection(const QString& error)
 {
+    if(m_busy && (m_state == State::Entering || m_state == State::Locked)) {
+        if(!m_entryFailure.isEmpty()) m_entryFailure += QStringLiteral("; ");
+        m_entryFailure += error.isEmpty() ? QStringLiteral("A required protection failed") : error;
+        return;
+    }
     // A late target could not be protected. Never keep displaying Locked after
     // that failure; detach guards and restore their write-ahead records now.
     if(m_state == State::Locked) {
@@ -103,11 +127,13 @@ void LockCoordinator::failProtection(const QString& error)
 bool LockCoordinator::restore(QString& error)
 {
     QStringList errors;
-    // Reverse entry order; retain failed ephemeral cleanup for a later retry.
+    std::vector<LockGuard*> prepared;
+    // First detach persistent enforcement, retaining input/action barriers while
+    // host setters publish restoration signals and journal writes are committed.
     for(size_t i = m_applied.size(); i > 0; --i) {
         QString detail;
-        if(m_applied[i - 1]->leave(detail)) {
-            m_applied.erase(m_applied.begin() + static_cast<std::ptrdiff_t>(i - 1));
+        if(m_applied[i - 1]->prepareRecovery(detail)) {
+            prepared.push_back(m_applied[i - 1]);
         }
         else {
             errors.append(QStringLiteral("%1 cleanup failed: %2").arg(m_applied[i - 1]->id(), detail));
@@ -120,11 +146,23 @@ bool LockCoordinator::restore(QString& error)
         if(guard == m_guards.end()) {
             errors.append(QStringLiteral("Recovery handler unavailable: %1 (%2)").arg(it->guard, it->target));
         }
-        else if(std::ranges::find(m_applied, guard->get()) != m_applied.end()) {
+        else if(std::ranges::find(m_applied, guard->get()) != m_applied.end()
+                && std::ranges::find(prepared, guard->get()) == prepared.end()) {
             errors.append(QStringLiteral("Recovery deferred until %1 enforcement is detached").arg(it->guard));
         }
         else if(!(*guard)->recover(*it, detail) || !m_journal.forget(*it, detail)) {
             errors.append(QStringLiteral("Recovery failed for %1: %2").arg(it->target, detail));
+        }
+    }
+    // Always release successful barriers, even when persistent recovery failed:
+    // RecoveryRequired is visibly unlocked, with originals retained for retry.
+    for(auto* guard : prepared) {
+        QString detail;
+        if(guard->finishRecovery(detail)) {
+            std::erase(m_applied, guard);
+        }
+        else {
+            errors.append(QStringLiteral("%1 final cleanup failed: %2").arg(guard->id(), detail));
         }
     }
     error = errors.join(QStringLiteral("; "));
@@ -133,10 +171,17 @@ bool LockCoordinator::restore(QString& error)
 
 void LockCoordinator::shutdown()
 {
-    if(m_state == State::Shutdown || m_busy) {
+    if(m_state == State::Shutdown) {
         return;
     }
-    const QScopedValueRollback busy{m_busy, true};
+    if(m_busy) {
+        m_shutdownRequested = true;
+        return;
+    }
+    m_shutdownRequested = false;
+    m_busy = true;
+    const auto transition = qScopeGuard([this]() { m_busy = false; });
+    changeState(State::Unlocking);
     // Do not attempt startup recovery before host readiness. The disk record
     // remains intact for the next startup if shutdown happens early.
     if(m_loaded) {
@@ -146,6 +191,12 @@ void LockCoordinator::shutdown()
         }
     }
     changeState(State::Shutdown);
+}
+
+void LockCoordinator::finishTransition()
+{
+    m_busy = false;
+    if(m_shutdownRequested) shutdown();
 }
 
 LockCoordinator::State LockCoordinator::state() const { return m_state; }

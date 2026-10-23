@@ -135,6 +135,61 @@ private Q_SLOTS:
         QVERIFY(!s.host.handler->playlistByName(QStringLiteral("Renamed"))->isLocked());
     }
 
+    void queuedRequestsAndNaturalEndAcrossTransitions_data() { naturalQueueProgression_data(); }
+
+    void queuedRequestsAndNaturalEndAcrossTransitions()
+    {
+        QFETCH(int, mode);
+        Session s{true};
+        s.host.settings.createTempSetting<Settings::Core::PlaybackQueueMode>(mode);
+        s.host.settings.createTempSetting<Settings::Core::PlaybackQueueHistoryLimit>(10);
+        PlayerController player{&s.host.settings, s.host.handler.get()};
+        auto* playlist = s.host.handler->createPlaylist(QStringLiteral("Pending requests"));
+        Track first{QStringLiteral("/tmp/pending-first.flac"), 0}; first.setId(1);
+        Track second{QStringLiteral("/tmp/pending-second.flac"), 0}; second.setId(2);
+        Track third{QStringLiteral("/tmp/pending-third.flac"), 0}; third.setId(3);
+        s.host.handler->appendToPlaylist(playlist->id(), {first, second, third});
+        player.queueTracks(playlist->playlistTracks());
+        int commits = 0;
+        connect(&player, &PlayerController::trackChangeRequested, &player,
+                [&](const Player::TrackChangeRequest& request) {
+            // A request submitted to the engine before entry can commit later.
+            QMetaObject::invokeMethod(&player, [&, request]() {
+                ++commits;
+                player.commitCurrentTrack(request);
+            }, Qt::QueuedConnection);
+        });
+        player.play();
+        QCOMPARE(commits, 0);
+        bool importCompleted = false;
+        QMetaObject::invokeMethod(s.host.handler.get(), [&]() {
+            s.host.handler->appendToPlaylist(playlist->id(), {third});
+            importCompleted = true;
+        }, Qt::QueuedConnection);
+        QVERIFY(s.coordinator.setLocked(true));
+        QTRY_COMPARE(commits, 1);
+        QVERIFY(importCompleted);
+        QCOMPARE(playlist->trackCount(), 3); // Host content lock rejects the pending import.
+        QCOMPARE(player.currentTrack(), first); // Never undo a submitted playback request.
+        // Natural advancement is legal even during synchronous transition signals.
+        const auto connection = connect(&s.coordinator, &LockCoordinator::stateChanged, &player,
+                [&](LockCoordinator::State state) {
+            if(state == LockCoordinator::State::Entering || state == LockCoordinator::State::Unlocking)
+                player.advance(Player::AdvanceReason::NaturalEnd);
+        });
+        QVERIFY(s.coordinator.setLocked(false));
+        QTRY_COMPARE(commits, 2);
+        QCOMPARE(player.currentTrack(), second);
+        QVERIFY(s.coordinator.setLocked(true));
+        QTRY_COMPARE(commits, 3);
+        QCOMPARE(player.currentTrack(), third);
+        s.coordinator.shutdown(); // Unlocking reaches natural end, without a manual stop.
+        QCOMPARE(player.playState(), Player::PlayState::Stopped);
+        QCOMPARE(commits, 3);
+        QVERIFY(!playlist->isLocked());
+        disconnect(connection);
+    }
+
     void rejectsContentMutations()
     {
         Session s;

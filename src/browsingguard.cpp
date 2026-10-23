@@ -5,6 +5,7 @@
 #include <core/coresettings.h>
 #include <gui/fywidget.h>
 #include <gui/guipaths.h>
+#include <gui/guisettings.h>
 #include <gui/layout/layoutprovider.h>
 #include <utils/settings/settingsmanager.h>
 
@@ -168,12 +169,17 @@ bool BrowsingGuard::enter(RecoveryJournal& journal, QString& error)
     const auto original = m_settings->value(CursorKey);
     if(!journal.remember({id(), QStringLiteral("setting"), CursorKey, original, false}, error)) return false;
     m_journal = &journal;
-    m_settings->subscribe(CursorKey, this, [this]() {
+    const auto enforceCursor = [this]() {
         if(!m_journal || m_updating) return;
         const QScopedValueRollback updating{m_updating, true};
         QString detail;
         if(!persistCursor(false, detail)) Q_EMIT protectionFailed(detail);
-    });
+    };
+    // The host registers a typed enum setting, which publishes settingChangedBool,
+    // not settingChangedVariant. Keep the string adapter for public-API fixtures
+    // and hosts registering the same persistent key without the enum alias.
+    m_settings->subscribe<Settings::Gui::PlaybackFollowsCursor>(this, enforceCursor);
+    m_settings->subscribe(CursorKey, this, enforceCursor);
     if(!persistCursor(false, error)) return false;
     if(!protectQuickSearch(error)) return false;
     // Do not clear PlayerController's generic scheduled-track slot. A request

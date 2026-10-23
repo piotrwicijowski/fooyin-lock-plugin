@@ -58,5 +58,5 @@ if(LOCK_FOOYIN_EXECUTABLE)
             --host "${LOCK_FOOYIN_EXECUTABLE}"
             --plugin $<TARGET_FILE:Lock>
             --driver $<TARGET_FILE:LockSmokeDriver>)
-    set_tests_properties(lock.host-smoke PROPERTIES TIMEOUT 150)
+    set_tests_properties(lock.host-smoke PROPERTIES TIMEOUT 200)
 endif()

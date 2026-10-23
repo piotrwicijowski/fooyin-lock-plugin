@@ -19,6 +19,9 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
+#include <functional>
+
 using namespace Fooyin;
 using namespace Fooyin::SessionLock;
 using namespace Fooyin::SessionLock::Tests;
@@ -43,6 +46,8 @@ struct Host
     bool failRecovery{false};
     bool ephemeral{false};
     bool durableBeforeMutation{false};
+    std::function<void()> duringEntry;
+    std::function<void()> duringRecovery;
 };
 
 class Guard : public LockGuard
@@ -59,11 +64,12 @@ public:
             return false;
         }
         RecoveryJournal disk{m_host.journalPath};
-        m_host.durableBeforeMutation = disk.load(error) && disk.records() == std::vector{record};
+        m_host.durableBeforeMutation = disk.load(error) && std::ranges::find(disk.records(), record) != disk.records().end();
         if(!m_host.durableBeforeMutation) {
             return false;
         }
         m_host.value = false;
+        if(m_host.duringEntry) m_host.duringEntry();
         if(m_host.failEntry) {
             error = QStringLiteral("injected entry failure");
             return false;
@@ -89,6 +95,7 @@ public:
             return false;
         }
         m_host.value = record.original;
+        if(m_host.duringRecovery) m_host.duringRecovery();
         return true;
     }
 private:
@@ -385,6 +392,70 @@ private Q_SLOTS:
         disconnect(connection); // callbacks is destroyed before coordinator.
     }
 
+    void synchronousProtectionFailure_data()
+    {
+        QTest::addColumn<bool>("duringEntry");
+        QTest::newRow("guard-setter-callback") << true;
+        QTest::newRow("locked-observer") << false;
+    }
+
+    void synchronousProtectionFailure()
+    {
+        QFETCH(bool, duringEntry);
+        QTemporaryDir directory;
+        Host host;
+        host.journalPath = directory.filePath(QStringLiteral("recovery.json"));
+        LockCoordinator coordinator{host.journalPath};
+        QVERIFY(coordinator.addGuard(std::make_unique<Guard>(host)));
+        QVERIFY(coordinator.recover());
+        if(duringEntry) {
+            host.duringEntry = [&]() { coordinator.failProtection(QStringLiteral("late target failed")); };
+        }
+        const auto connection = connect(&coordinator, &LockCoordinator::stateChanged, &coordinator, [&](State state) {
+            if(!duringEntry && state == State::Locked) coordinator.failProtection(QStringLiteral("late target failed"));
+        });
+        QSignalSpy states{&coordinator, &LockCoordinator::stateChanged};
+        QVERIFY(!coordinator.setLocked(true));
+        QCOMPARE(coordinator.state(), State::Unlocked);
+        QCOMPARE(host.value, QVariant{true});
+        QVERIFY(!host.ephemeral);
+        QVERIFY(coordinator.lastError().contains(QStringLiteral("late target failed")));
+        if(duringEntry) {
+            for(const auto& state : states) QVERIFY(state.at(0).value<State>() != State::Locked);
+        }
+        disconnect(connection);
+    }
+
+    void shutdownRequestedDuringTransition_data()
+    {
+        QTest::addColumn<bool>("duringEntry");
+        QTest::newRow("entry") << true;
+        QTest::newRow("restoration") << false;
+    }
+
+    void shutdownRequestedDuringTransition()
+    {
+        QFETCH(bool, duringEntry);
+        QTemporaryDir directory;
+        Host host;
+        host.journalPath = directory.filePath(QStringLiteral("recovery.json"));
+        LockCoordinator coordinator{host.journalPath};
+        QVERIFY(coordinator.addGuard(std::make_unique<Guard>(host)));
+        QVERIFY(coordinator.recover());
+        if(duringEntry) host.duringEntry = [&]() { coordinator.shutdown(); };
+        else host.duringRecovery = [&]() { coordinator.shutdown(); };
+        QCOMPARE(coordinator.setLocked(true), !duringEntry);
+        if(!duringEntry) QVERIFY(coordinator.setLocked(false));
+        QCOMPARE(coordinator.state(), State::Shutdown);
+        QCOMPARE(host.value, QVariant{true});
+        QVERIFY(!host.ephemeral);
+        RecoveryJournal journal{host.journalPath};
+        QString error;
+        QVERIFY(journal.load(error));
+        QVERIFY(journal.records().empty());
+        QCOMPARE(host.calls.count(QStringLiteral("browse.leave")), 1);
+    }
+
     void invalidRecovery_data()
     {
         QTest::addColumn<QByteArray>("data");
@@ -527,6 +598,72 @@ private Q_SLOTS:
         QCOMPARE(host.value, QVariant{true});
         QVERIFY(!actions.command(ToggleActionId));
         QVERIFY(playback->menu()->actions().empty());
+    }
+
+    void assembledRestorationKeepsActionsMasked_data()
+    {
+        QTest::addColumn<QString>("exitPath");
+        QTest::newRow("unlock") << QStringLiteral("unlock");
+        QTest::newRow("partial-entry-rollback") << QStringLiteral("rollback");
+        QTest::newRow("locked-runtime-destruction") << QStringLiteral("shutdown");
+    }
+
+    void assembledRestorationKeepsActionsMasked()
+    {
+        QFETCH(QString, exitPath);
+        PlaylistHost host;
+        const QString cursorKey = QStringLiteral("Playlist/PlaybackFollowsCursor");
+        host.settings.createSetting(cursorKey, true);
+        auto* normal = host.handler->createPlaylist(QStringLiteral("Normal"));
+        auto* prelocked = host.handler->createPlaylist(QStringLiteral("Prelocked"));
+        host.handler->setPlaylistLocked(prelocked->id(), true);
+        host.handler->savePlaylist(prelocked->id());
+        ActionManager actions{&host.settings};
+        QMainWindow window;
+        actions.setMainWindow(&window);
+        QAction transport;
+        auto* command = actions.registerAction(&transport, Constants::Actions::PlayPause);
+        command->setCurrentContext(Context{Constants::Context::Global});
+        QSignalSpy activations{&transport, &QAction::triggered};
+        Host injected;
+        injected.failEntry = exitPath == QStringLiteral("rollback");
+        injected.journalPath = host.directory.filePath(QStringLiteral("recovery.json"));
+        int restorations = 0;
+        QObject observer;
+        host.settings.subscribe(cursorKey, &observer, [&](const QVariant& value) {
+            if(!value.toBool()) return;
+            ++restorations;
+            // A real SettingsManager setter emits synchronously inside recovery.
+            // Neither proxy nor retained source may become usable in this gap.
+            QVERIFY(!transport.isEnabled());
+            QVERIFY(!command->action()->isEnabled());
+            transport.trigger();
+            command->action()->trigger();
+            QCOMPARE(activations.size(), 0);
+        });
+        {
+            LockRuntime runtime{injected.journalPath, host.directory.filePath(QStringLiteral("settings.ini"))};
+            auto gui = guiContext();
+            gui.actionManager = &actions;
+            QVERIFY(runtime.initialiseCore(host.context()));
+            QVERIFY(runtime.initialiseGui(gui));
+            QVERIFY(runtime.coordinator()->addGuard(std::make_unique<Guard>(injected)));
+            QVERIFY(runtime.coordinator()->recover());
+            QCOMPARE(runtime.coordinator()->setLocked(true), exitPath != QStringLiteral("rollback"));
+            if(exitPath == QStringLiteral("unlock")) QVERIFY(runtime.coordinator()->setLocked(false));
+            else if(exitPath == QStringLiteral("rollback")) QCOMPARE(runtime.coordinator()->state(), State::Unlocked);
+        }
+        QCOMPARE(restorations, 1);
+        QCOMPARE(host.settings.value(cursorKey), QVariant{true});
+        QVERIFY(!normal->isLocked());
+        QVERIFY(prelocked->isLocked());
+        QVERIFY(transport.isEnabled());
+        QVERIFY(command->action()->isEnabled());
+        RecoveryJournal journal{injected.journalPath};
+        QString error;
+        QVERIFY(journal.load(error));
+        QVERIFY(journal.records().empty());
+        actions.unregisterAction(&transport, Constants::Actions::PlayPause);
     }
 };
 
