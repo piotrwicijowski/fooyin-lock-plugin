@@ -4,7 +4,7 @@
 
 For release ZIP installation through fooyin's settings dialog, follow the
 [README installation steps](../README.md#installation). This guide covers source
-builds, manual installation, testing, and developer references.
+builds, manual installation, and testing.
 
 ## Requirements
 
@@ -14,8 +14,7 @@ builds, manual installation, testing, and developer references.
   Qt Test is additionally required when `BUILD_TESTING=ON` (the default).
 - An **installed fooyin SDK and matching runtime**, including `FooyinConfig.cmake`,
   public headers, and Core/Gui/Utils shared libraries. Configure fooyin with
-  `INSTALL_HEADERS=ON` to produce the SDK. The plugin does not fall back to source
-  or private headers.
+  `INSTALL_HEADERS=ON` to produce the SDK.
 - Python 3.8 or newer for the optional real-host smoke test, plus fooyin's Qt SQLite
   driver and other runtime dependencies.
 
@@ -25,10 +24,9 @@ The automated test baseline is fooyin **0.13.1**, commit
 `bb8d9f0371b254571fffec310dce3ee1ce005c87`. Use the same Qt/compiler ABI for the host
 and plugin. A release compatibility range is not yet established.
 
-See [verification evidence](verification.md) for the actual toolchain and commands
-used, and the [tested widget/plugin matrix and limitations](compatibility.md)
-before relying on a particular integration. Changing the host baseline requires
-rechecking the runtime widget and action identification as well as compilation.
+See [tested environments and known limitations](compatibility.md) before relying
+on a particular integration. A successful build against another fooyin version
+does not establish interaction compatibility.
 
 ## Build the fooyin SDK
 
@@ -81,9 +79,8 @@ the CTest command. Use `-DCMAKE_BUILD_TYPE=Release` for an optimized build.
 
 The commands above install
 `$HOME/.local/lib/fooyin/plugins/fyplugin_lock.so`, which fooyin discovers on its
-next startup. The plugin is listed as **Session Lock** in **Settings → Plugins**
-(identifier `fooyin-lock-plugin.sessionlock`). Restart the matching fooyin runtime
-after installing.
+next startup. The plugin is listed as **Session Lock** in **Settings → Plugins**.
+Restart the matching fooyin runtime after installing.
 
 - `CMAKE_INSTALL_PREFIX` chooses the install prefix.
 - `CMAKE_INSTALL_LIBDIR` defaults to the platform's library directory; the example
@@ -94,9 +91,7 @@ after installing.
   a build without installing it. For staged installs, point it at the staged
   plugin directory instead.
 
-The test driver and test executables are never installed. The installed module
-uses the host's library layout and keeps external SDK library search paths where
-needed. The SDK/runtime used at launch must remain available and match the build.
+The SDK/runtime used at launch must remain available and match the build.
 
 ## Real-host smoke test
 
@@ -114,29 +109,6 @@ runner creates a disposable HOME/XDG profile and uses Qt's offscreen platform.
 The default run needs no audio device or display server, but does need Qt's
 SQLite runtime driver.
 
-It loads the actual plugin and a separate test driver, reaches the host event
-loop, waits for playlists to populate, and exits through normal application
-shutdown while locked. It checks:
-
-- Core/GUI initialization and lock/unlock/relock transitions.
-- Registered actions, direct protected actions, host refreshes, late registration,
-  and current-state restoration.
-- Playlist locks, parent/viewport input filtering, and late or replaced widgets.
-- Library/filter models, colliding result names, live search, search modes, Quick
-  Search show-all, and saved-layout recovery.
-- Repeated interrupted-session recovery: hard exit while locked, another exit
-  during startup recovery, then restoration and journal acknowledgement using the
-  same profile.
-- Disabling the plugin through the actual Plugins settings page while locked,
-  restarting disabled with original playlist states restored, and re-enabling
-  for an unlocked startup and successful lock/unlock.
-
-The lifecycle test separately exercises actual `QPluginLoader` unload with Qt's
-default unload-prevention hint cleared. The optional
-[X11 run](compatibility.md#reproduce-the-automated-verification) adds native Global
-Hotkeys delivery with `--platform xcb --global-hotkeys /path/to/module.so` and
-matching optional host plugins.
-
 ### Verify the installed artifact
 
 ```sh
@@ -146,34 +118,40 @@ python3 tests/host-smoke.py \
   --driver build/tests/hostdriver/fyplugin_locksmokedriver.so
 ```
 
-### Debug logging and recovery state
+### Optional widgets and native X11 hotkeys
+
+Build Wavebar, Spectrogram, and Global Hotkeys from the same fooyin checkout and
+build configuration as the SDK/runtime:
+
+```sh
+cmake -S /path/to/fooyin -B /path/to/fooyin-build \
+  -DBUILD_PLUGINS=ON -DPLUGIN_SELECTION=wavebar,spectrogram,globalhotkeys
+cmake --build /path/to/fooyin-build --target wavebar spectrogram globalhotkeys --parallel 4
+```
+
+For an offscreen optional-widget run, add both Wavebar and Spectrogram paths to
+the installed-artifact command using repeated `--optional-plugin` arguments.
+To also test native Global Hotkeys delivery, install Xvfb, XTest, and the
+`libX11.so.6`/`libXtst.so.6` runtime libraries, then run:
+
+```sh
+xvfb-run -a python3 tests/host-smoke.py \
+  --host /path/to/fooyin-sdk/bin/fooyin \
+  --plugin "$HOME/.local/lib/fooyin/plugins/fyplugin_lock.so" \
+  --driver build/tests/hostdriver/fyplugin_locksmokedriver.so \
+  --platform xcb \
+  --global-hotkeys /path/to/fooyin-build/run/lib/fooyin/plugins/fyplugin_globalhotkeys.so \
+  --optional-plugin /path/to/fooyin-build/run/lib/fooyin/plugins/fyplugin_wavebar.so \
+  --optional-plugin /path/to/fooyin-build/run/lib/fooyin/plugins/fyplugin_spectrogram.so
+```
+
+Use a disposable X11 display: this check temporarily grabs the Media Play and
+Media Stop keys. It does not verify Wayland/portal hotkey delivery.
+
+## Troubleshooting
 
 Launch fooyin with `QT_LOGGING_RULES='fy.sessionlock.debug=true'` for debug
 lifecycle messages.
 
-The durable `session-lock-recovery.json` journal in fooyin's state directory
-records temporary persistent changes. Startup recovery restores original
-playlist locks, cursor-follow and result-generation settings, and saved-layout
-overrides. If recovery is unresolved, the menu shows **Recovery required — Retry**
-with details in its status/tooltip text and the application log. Activating the
-action retries recovery before allowing a new lock.
-
-## Development references
-
-- [Implementation tickets](../.plan/INDEX.md) and [research findings](../FINDINGS.md)
-- [Approved behavior contract](../.plan/001-decide-lock-policy.md#approved-behavior-contract)
-- [Runtime ownership and test extension points](architecture.md)
-- [Protected commands and remaining direct-call routes](registered-actions.md)
-- [Playlist locks, GUI routes and durable recovery](playlist-protection.md)
-- [Widget identification, input rules and dynamic discovery](widget-input.md)
-- [Playback gestures, direct menu actions and queue drops](playback-protection.md)
-- [Seeking controls, preview cancellation and supported matrix](seeking-protection.md)
-- [Safe browsing, generated playlists, search modes and settings recovery](browsing-protection.md)
-- [Transition ordering, in-flight work, repeated recovery and teardown](transitions.md)
-- [Build and runtime verification evidence](verification.md)
-- [Tested compatibility matrix, boundaries and manual sign-off](compatibility.md)
-
-Keep project includes restricted to fooyin's installed public headers. Add focused
-coordinator/action/filter tests to `tests/` when extending protection. The intended
-protection boundary is ordinary interactions on audited GUI routes; CLI, MPRIS,
-and arbitrary direct controller calls remain outside that boundary.
+For interrupted-session recovery, see the
+[README recovery instructions](../README.md#recovery-after-an-unexpected-exit).

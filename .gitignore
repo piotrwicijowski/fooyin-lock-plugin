@@ -6,11 +6,4 @@ __pycache__/
 FINDINGS.md
 docs/*
 !docs/BUILDING.md
-!docs/registered-actions.md
-!docs/playlist-protection.md
-!docs/widget-input.md
-!docs/playback-protection.md
-!docs/seeking-protection.md
-!docs/browsing-protection.md
-!docs/transitions.md
 !docs/compatibility.md

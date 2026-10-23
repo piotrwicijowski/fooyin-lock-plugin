@@ -64,6 +64,5 @@ application log. A new lock can only start after recovery succeeds.
 
 ## Further documentation
 
-- [Building and installing](docs/BUILDING.md) — requirements, source builds, installation paths, testing, and developer references.
-- [Compatibility and known limitations](docs/compatibility.md) — tested fooyin setups, supported controls, and verification evidence.
-- [How the lock works](docs/architecture.md) — technical overview for contributors.
+- [Building and installing](docs/BUILDING.md) — requirements, source builds, installation paths, and testing.
+- [Compatibility and known limitations](docs/compatibility.md) — tested fooyin setups and protection boundaries.
