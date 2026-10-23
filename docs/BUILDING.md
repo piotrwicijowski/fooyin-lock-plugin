@@ -25,11 +25,6 @@ The automated test baseline is fooyin **0.13.1**, commit
 `bb8d9f0371b254571fffec310dce3ee1ce005c87`. Use the same Qt/compiler ABI for the host
 and plugin. A release compatibility range is not yet established.
 
-User-reported manual drag/drop and rendered Wavebar input checks also passed on
-fooyin **0.14.0**, up-to-date Arch Linux/Wayland and Qt **6.12.0**, using Session
-Lock built from latest `master` at test time. The full automated suite was not
-reported as rerun on that setup.
-
 See [verification evidence](verification.md) for the actual toolchain and commands
 used, and the [tested widget/plugin matrix and limitations](compatibility.md)
 before relying on a particular integration. Changing the host baseline requires

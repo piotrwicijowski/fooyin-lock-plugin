@@ -7,6 +7,7 @@
 
 #include <QAbstractItemView>
 #include <QContextMenuEvent>
+#include <QCoreApplication>
 #include <QDragEnterEvent>
 #include <QHeaderView>
 #include <QKeyEvent>
