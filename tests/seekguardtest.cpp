@@ -160,8 +160,16 @@ private Q_SLOTS:
                     QVERIFY(event.isAccepted());
                 }
             }
-            for(auto phase : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease, QEvent::MouseButtonDblClick})
+            for(auto phase : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease, QEvent::MouseButtonDblClick}) {
                 mouse(&control, phase);
+                for(auto modifiers : {Qt::KeyboardModifiers{}, Qt::KeyboardModifiers{Qt::ShiftModifier},
+                                      Qt::KeyboardModifiers{Qt::ControlModifier},
+                                      Qt::KeyboardModifiers{Qt::ShiftModifier | Qt::ControlModifier}}) {
+                    QMouseEvent event{phase, QPointF{20, 20}, QPointF{20, 20}, Qt::MiddleButton,
+                                      phase == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::MiddleButton, modifiers};
+                    QCoreApplication::sendEvent(&control, &event);
+                }
+            }
             QMouseEvent move{QEvent::MouseMove, QPointF{30, 20}, QPointF{30, 20}, Qt::NoButton,
                               Qt::LeftButton, Qt::NoModifier};
             QCoreApplication::sendEvent(&control, &move);

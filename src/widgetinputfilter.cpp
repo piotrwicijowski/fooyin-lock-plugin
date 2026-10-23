@@ -153,9 +153,12 @@ bool WidgetInputFilter::isSeekInput(const QWidget* widget, const QEvent* event)
     }
     switch(event->type()) {
         case QEvent::MouseButtonPress: case QEvent::MouseButtonRelease: case QEvent::MouseButtonDblClick:
-            return static_cast<const QMouseEvent*>(event)->button() == Qt::LeftButton;
+            // Middle-click (with modifiers) sets, clears or toggles A–B repeat
+            // directly, bypassing the registered playback actions.
+            return static_cast<const QMouseEvent*>(event)->button() == Qt::LeftButton
+                || static_cast<const QMouseEvent*>(event)->button() == Qt::MiddleButton;
         case QEvent::MouseMove:
-            return static_cast<const QMouseEvent*>(event)->buttons().testFlag(Qt::LeftButton);
+            return static_cast<const QMouseEvent*>(event)->buttons().testAnyFlags(Qt::LeftButton | Qt::MiddleButton);
         case QEvent::Wheel: return true;
         default: return false;
     }

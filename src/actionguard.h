@@ -11,6 +11,7 @@
 
 class QAction;
 class QActionGroup;
+class QMenu;
 
 namespace Fooyin {
 class ActionManager;
@@ -42,6 +43,8 @@ private:
 
     void refresh();
     void protectDirectActions(QWidget* widget);
+    void protectRepeatMenu(QMenu* menu);
+    bool eventFilter(QObject* receiver, QEvent* event) override;
     void suppress(QAction* action);
     void release(QAction* action);
     static void restore(const Restriction& restriction);

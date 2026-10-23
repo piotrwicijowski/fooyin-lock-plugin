@@ -46,6 +46,10 @@ private Q_SLOTS:
         QTest::addColumn<QString>("commandId");
         QTest::addColumn<QString>("contextId");
         QTest::newRow("seek") << QStringLiteral("Seek.Backward.Large") << QStringLiteral("Context.Global");
+        QTest::newRow("ab-set-a") << QStringLiteral("Playback.ABRepeat.SetStart") << QStringLiteral("Context.Global");
+        QTest::newRow("ab-set-b") << QStringLiteral("Playback.ABRepeat.SetEnd") << QStringLiteral("Context.Global");
+        QTest::newRow("ab-enable") << QStringLiteral("Playback.ABRepeat.Enable") << QStringLiteral("Context.Global");
+        QTest::newRow("ab-clear") << QStringLiteral("Playback.ABRepeat.Clear") << QStringLiteral("Context.Global");
         QTest::newRow("stop-after") << QStringLiteral("Playback.StopAfterCurrent.Reset") << QStringLiteral("Context.Global");
         QTest::newRow("queue-insert") << QStringLiteral("Tracks.QueueNext") << QStringLiteral("Context.Global");
         QTest::newRow("queue-clear") << QStringLiteral("Edit.Clear") << QStringLiteral("Context.QueueViewer.7");
@@ -149,6 +153,71 @@ private Q_SLOTS:
         menu.actions().front()->trigger();
         shortcut();
         QCOMPARE(triggered.size(), 5);
+    }
+
+    void repeatContextMenus_data()
+    {
+        QTest::addColumn<bool>("createdWhileLocked");
+        QTest::newRow("existing") << false;
+        QTest::newRow("late") << true;
+    }
+
+    void repeatContextMenus()
+    {
+        QFETCH(bool, createdWhileLocked);
+        Host host;
+        QAction enableSource, clearSource;
+        auto* enable = host.actions.registerAction(&enableSource, "Playback.ABRepeat.Enable")->action();
+        auto* clear = host.actions.registerAction(&clearSource, "Playback.ABRepeat.Clear")->action();
+        ActionGuard guard{&host.actions};
+        QString error;
+        if(createdWhileLocked) QVERIFY(guard.enter(host.journal, error));
+
+        QMenu root;
+        auto* display = root.addAction(QStringLiteral("Display"));
+        auto* repeat = root.addMenu(QStringLiteral("Translated menu"));
+        // Match ABRepeatControls: A/B copy presentation but have no linked
+        // action; Enable/Clear are linked proxies in the same submenu.
+        auto* start = new ProxyAction{repeat};
+        start->initialise(enable);
+        repeat->addAction(start);
+        auto* end = new ProxyAction{repeat};
+        end->initialise(clear);
+        repeat->addAction(end);
+        auto* enabled = new ProxyAction{repeat};
+        enabled->setAction(enable);
+        repeat->addAction(enabled);
+        auto* cleared = new ProxyAction{repeat};
+        cleared->setAction(clear);
+        repeat->addAction(cleared);
+        QSignalSpy startTriggered{start, &QAction::triggered};
+        QSignalSpy endTriggered{end, &QAction::triggered};
+        QSignalSpy displayTriggered{display, &QAction::triggered};
+        QSignalSpy enableTriggered{&enableSource, &QAction::triggered};
+        QSignalSpy clearTriggered{&clearSource, &QAction::triggered};
+        if(!createdWhileLocked) QVERIFY(guard.enter(host.journal, error));
+        else root.popup(QPoint{10, 10}); // Show protects child menus before input.
+        for(auto* action : repeat->actions()) {
+            action->setEnabled(true); // Host refreshes must not bypass inhibition.
+            QVERIFY(!action->isEnabled());
+            action->trigger();
+        }
+        QCOMPARE(startTriggered.size(), 0);
+        QCOMPARE(endTriggered.size(), 0);
+        QCOMPARE(enableTriggered.size(), 0);
+        QCOMPARE(clearTriggered.size(), 0);
+        display->trigger();
+        QCOMPARE(displayTriggered.size(), 1);
+        end->setEnabled(false); // Preserve the latest host eligibility on unlock.
+        QVERIFY(guard.leave(error));
+        QVERIFY(start->isEnabled());
+        QVERIFY(!end->isEnabled());
+        start->trigger();
+        enabled->trigger();
+        cleared->trigger();
+        QCOMPARE(startTriggered.size(), 1);
+        QCOMPARE(enableTriggered.size(), 1);
+        QCOMPARE(clearTriggered.size(), 1);
     }
 
     void currentHostIntentSurvivesSilentUpdates()

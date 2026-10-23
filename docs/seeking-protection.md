@@ -22,6 +22,30 @@ The controls are identified by audited metaobject names and ancestry, using inst
 public headers and Qt APIs only. New controls, reparenting and Spectrogram mode
 replacement are resolved on the first input without a queued scan.
 
+## A–B repeat
+
+On hosts providing A–B repeat, Session Lock also blocks marker and loop changes:
+
+- `ActionGuard` inhibits `Playback.ABRepeat.SetStart`, `.SetEnd`, `.Enable` and
+  `.Clear`, including their source actions and registered shortcuts. Stable string
+  IDs retain build compatibility with older installed SDKs.
+- `SeekGuard` consumes middle-button press, release, double-click and held moves
+  on the same three seek controls, including Shift/Ctrl combinations. These
+  gestures call the player directly rather than triggering registered actions.
+  Existing left-button filtering covers marker dragging, and `UngrabMouse` also
+  cancels an active A–B marker drag without committing its preview.
+- Seekbar context menus create independent **Set A here / Set B here** actions.
+  Their mutation-only submenu is identified through the Enable/Clear proxies'
+  public source-action links, without matching translated labels or positions.
+  `ActionGuard` inhibits the submenu's actions at lock entry, on menu show
+  (including child menus), and before menu input. Newly opened and already-open
+  menus are covered; display settings remain available.
+
+An existing loop continues playing while locked. Unlock restores action eligibility
+using the host's latest state. No upstream changes or private headers are needed.
+Regression coverage includes all four registered commands, existing/late context
+menus, host re-enabling attempts, unlock restoration, and modified middle-clicks.
+
 ## Entry, cancellation and cleanup
 
 Required protection covers gestures started after **Locked** is shown, while the

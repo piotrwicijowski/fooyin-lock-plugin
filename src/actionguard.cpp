@@ -18,6 +18,10 @@ namespace Fooyin::SessionLock {
 namespace {
 enum class Scope { None, All, Editing };
 
+// Use stable command IDs so the plugin also builds with SDKs predating A–B repeat.
+constexpr auto RepeatEnableId = "Playback.ABRepeat.Enable";
+constexpr auto RepeatClearId = "Playback.ABRepeat.Clear";
+
 Scope scope(const QString& name)
 {
     using namespace Constants::Actions;
@@ -26,6 +30,7 @@ Scope scope(const QString& name)
         PlaybackDefault, RepeatTrack, RepeatAlbum, RepeatPlaylist, ShuffleTracks, ShuffleAlbums, Random,
         StopAfterCurrent, StopAfterCurrentReset, PlaybackFollowsCursor,
         SeekForwardSmall, SeekForwardLarge, SeekBackwardSmall, SeekBackwardLarge,
+        "Playback.ABRepeat.SetStart", "Playback.ABRepeat.SetEnd", RepeatEnableId, RepeatClearId,
         AddFiles, AddFolders, AddStreamUrl, NewPlaylist, NewAutoPlaylist, EditAutoPlaylist, RemovePlaylist,
         LoadPlaylist, ClearPlaylist, LockPlaylist, AddToCurrent, AddToActive, AddToPlaylist, SendToCurrent,
         SendToNew, AddToQueue, QueueNext, SendToQueue, RemoveFromQueue,
@@ -105,6 +110,7 @@ bool ActionGuard::enter(RecoveryJournal&, QString& error)
     }
     if(!m_locked) {
         m_locked = true;
+        qApp->installEventFilter(this);
         m_registrationConnection = connect(m_actions, &ActionManager::commandsChanged, this, &ActionGuard::refresh);
         refresh();
         for(auto* widget : QApplication::allWidgets()) protectDirectActions(widget);
@@ -116,6 +122,7 @@ bool ActionGuard::enter(RecoveryJournal&, QString& error)
 bool ActionGuard::leave(QString&)
 {
     m_locked = false;
+    if(qApp) qApp->removeEventFilter(this);
     m_directInput.stop();
     disconnect(m_registrationConnection);
     for(const auto& command : m_commands) {
@@ -255,6 +262,7 @@ void ActionGuard::refresh()
 
 void ActionGuard::protectDirectActions(QWidget* widget)
 {
+    if(auto* menu = qobject_cast<QMenu*>(widget)) protectRepeatMenu(menu);
     if(!m_actions || (!widget->inherits("Fooyin::PlaylistWidget") && !widget->inherits("Fooyin::QueueViewer")
                       && !widget->inherits("Fooyin::LibraryTreeWidget"))) return;
     // Audited 0.13.1 ownership invariant: the only unregistered actions owned
@@ -274,5 +282,36 @@ void ActionGuard::protectDirectActions(QWidget* widget)
     for(auto* action : widget->findChildren<QAction*>(QString{}, Qt::FindDirectChildrenOnly)) {
         if(!registered.contains(action)) suppress(action);
     }
+}
+
+void ActionGuard::protectRepeatMenu(QMenu* menu)
+{
+    if(!m_actions) return;
+    // ABRepeatControls' Set A/B here proxies only copy command presentation;
+    // they have no source action and call the player directly. Identify their
+    // shared, mutation-only submenu by its linked Enable/Clear proxies instead
+    // of translated text or action order. Display menus stay available.
+    for(const auto* id : {RepeatEnableId, RepeatClearId}) {
+        auto* command = m_actions->command(id);
+        if(!command) continue;
+        for(auto* action : menu->actions()) {
+            auto* proxy = qobject_cast<ProxyAction*>(action);
+            if(proxy && proxy->action() == command->action()) {
+                for(auto* mutation : menu->actions()) suppress(mutation);
+                return;
+            }
+        }
+    }
+}
+
+bool ActionGuard::eventFilter(QObject* receiver, QEvent* event)
+{
+    if(m_locked && event->type() == QEvent::Show) {
+        if(auto* menu = qobject_cast<QMenu*>(receiver)) {
+            protectRepeatMenu(menu);
+            for(auto* child : menu->findChildren<QMenu*>()) protectRepeatMenu(child);
+        }
+    }
+    return false;
 }
 } // namespace Fooyin::SessionLock

@@ -28,6 +28,7 @@ target. Custom unaudited script/controller dispatch is outside this inventory.
 | `Playback.StopAfterCurrent`, `Playback.StopAfterCurrent.Reset` | Stop-after state and automatic-reset policy | Global; playback menu and shortcuts |
 | `Playback.PlaybackFollowsCursor` | Prevent action-based changes to cursor-follow playback policy | Global; playback menu and shortcuts. Suspending the setting itself belongs to 009. |
 | `Seek.Forward.Small`, `Seek.Forward.Large`, `Seek.Backward.Small`, `Seek.Backward.Large` | Registered relative seek commands | Global; shortcuts/command invocation |
+| `Playback.ABRepeat.SetStart`, `Playback.ABRepeat.SetEnd`, `Playback.ABRepeat.Enable`, `Playback.ABRepeat.Clear` | Set A/B markers, toggle or clear the loop | Hosts with A–B repeat; playback menu, shortcuts and command buttons. Direct seekbar routes are covered in [seeking protection](seeking-protection.md#ab-repeat). |
 | `File.AddFiles`, `File.AddFolders`, `File.AddStreamUrl`, `File.LoadPlaylist` | Import/append/load into playlists | Global; File menu and shortcuts |
 | `File.NewPlaylist`, `File.NewAutoPlaylist` | Playlist creation | Global plus per-instance playlist switcher/manager and organiser contexts |
 | `File.EditAutoPlaylist` | Autoplaylist query/sort editing | Per-instance switcher/manager and organiser contexts |
