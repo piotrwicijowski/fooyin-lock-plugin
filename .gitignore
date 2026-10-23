@@ -5,6 +5,7 @@ __pycache__/
 .plan/
 FINDINGS.md
 docs/*
+!docs/BUILDING.md
 !docs/registered-actions.md
 !docs/playlist-protection.md
 !docs/widget-input.md

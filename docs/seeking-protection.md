@@ -102,7 +102,8 @@ Native window-system drag/grab integration remains an assembled-lifecycle check 
 ### Ticket 008 verification — 2026-10-23
 
 Using the existing Debug configuration, installed public SDK and pinned matching
-host described in the README, from the plugin repository:
+host described in the [build and installation guide](BUILDING.md), from the plugin
+repository:
 
 ```sh
 cmake --build build --parallel 2

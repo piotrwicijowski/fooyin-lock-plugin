@@ -1,0 +1,221 @@
+name: Build version tag
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  # Select an existing version tag when running manually.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CC: gcc
+  CXX: g++
+  # Session Lock's tested fooyin 0.13.1 baseline (see docs/compatibility.md).
+  FOOYIN_REF: bb8d9f0371b254571fffec310dce3ee1ce005c87
+  QT_QPA_PLATFORM: offscreen
+
+jobs:
+  linux:
+    name: Linux x86-64 (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 24.04
+            target: ubuntu24.04
+            runner: ubuntu-24.04
+            container: ''
+            taglib_package: libtag1-dev
+          - name: Ubuntu 26.04
+            target: ubuntu26.04
+            runner: ubuntu-26.04
+            container: ''
+            taglib_package: libtag-dev
+          - name: Arch Linux
+            target: archlinux
+            runner: ubuntu-24.04
+            container: archlinux:base-devel
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Install git before checkout, including fooyin's recursive submodules.
+      - name: Install Arch Linux build dependencies
+        if: matrix.target == 'archlinux'
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel cmake ninja pkgconf git python binutils \
+            qt6-base qt6-svg taglib icu zlib libarchive ffmpeg
+
+      - name: Check out plugin at the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: plugin
+          persist-credentials: false
+
+      - name: Validate version tag
+        id: version
+        run: python3 plugin/.github/scripts/release.py validate --source plugin --ref "$GITHUB_REF"
+
+      - name: Test release helpers
+        run: python3 -m unittest discover -s plugin/.github/scripts -p 'test_*.py' -v
+
+      - name: Check out matching fooyin sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fooyin/fooyin
+          ref: ${{ env.FOOYIN_REF }}
+          path: fooyin
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Ubuntu build dependencies
+        if: matrix.target != 'archlinux'
+        env:
+          TAGLIB_PACKAGE: ${{ matrix.taglib_package }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git python3 binutils \
+            qt6-base-dev libqt6svg6-dev libqt6sql6-sqlite \
+            "$TAGLIB_PACKAGE" libicu-dev zlib1g-dev libarchive-dev \
+            libavcodec-dev libavfilter-dev libavformat-dev libavutil-dev libswresample-dev
+
+      - name: Build and install fooyin SDK and runtime
+        run: |
+          cmake -S fooyin -B build-fooyin -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/fooyin-sdk" \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DINSTALL_HEADERS=ON \
+            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_PLUGINS=OFF \
+            -DBUILD_ALSA=OFF \
+            -DBUILD_TRANSLATIONS=OFF \
+            -DBUILD_CCACHE=OFF
+          cmake --build build-fooyin --parallel 2
+          cmake --install build-fooyin
+
+      - name: Build plugin and tests against installed SDK
+        run: |
+          cmake -S plugin -B build-lock -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/fooyin-sdk" \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF \
+            -DLOCK_PLUGIN_INSTALL_DIR:STRING=lib/fooyin/plugins \
+            -DBUILD_TESTING=ON \
+            -DLOCK_FOOYIN_EXECUTABLE="$GITHUB_WORKSPACE/fooyin-sdk/bin/fooyin"
+          cmake --build build-lock --parallel 2
+
+      - name: Run headless tests and real-host smoke test
+        run: |
+          ctest --test-dir build-lock --output-on-failure --no-tests=error \
+            --output-junit test-results.xml
+
+      - name: Stage, check, and package plugin
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          python3 plugin/.github/scripts/release.py package \
+            --source plugin --build build-lock \
+            --fooyin-source fooyin --fooyin-build build-fooyin --fooyin-prefix fooyin-sdk \
+            --tag "$RELEASE_TAG" --output dist
+
+      - name: Upload release files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-linux-${{ matrix.target }}
+          path: dist/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Summarize build
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          metadata = json.loads(Path('dist/build-metadata.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(
+                  f"## Session Lock {metadata['tag']}\n\n"
+                  f"- Build: {metadata['os']} / {metadata['architecture']} / Release\n"
+                  f"- fooyin: `{metadata['fooyin_commit']}` ({metadata['fooyin_version']})\n"
+                  f"- Qt: {metadata['libraries']['Qt6Core']}\n"
+                  f"- Tests: CTest passed; packaged plugin lifecycle and real-host smoke checks passed\n"
+              )
+          PY
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: diagnostics-linux-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build-lock/Testing/Temporary/
+            build-lock/test-results.xml
+            build-lock/CMakeFiles/CMakeConfigureLog.yaml
+            build-fooyin/CMakeFiles/CMakeConfigureLog.yaml
+          retention-days: 14
+          if-no-files-found: warn
+
+  release:
+    name: Publish distribution builds
+    needs: linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out plugin at the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: plugin
+          persist-credentials: false
+
+      - name: Validate version tag
+        id: version
+        run: python3 plugin/.github/scripts/release.py validate --source plugin --ref "$GITHUB_REF"
+
+      - name: Download distribution builds
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: release-linux-*
+          path: dist
+
+      - name: Publish GitHub Release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          python3 plugin/.github/scripts/release.py publish \
+            --source plugin --tag "$RELEASE_TAG" --output dist --repo "$GITHUB_REPOSITORY"
+
+      - name: Summarize release
+        env:
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+        run: |
+          python3 - <<'PY'
+          import os
+
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f"[Download all distribution builds]({os.environ['RELEASE_URL']})\n")
+          PY

@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON CACHE BOOL "Keep external SDK library paths in installed plugins")
 
 include(GNUInstallDirs)
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Widgets Sql Concurrent Network)

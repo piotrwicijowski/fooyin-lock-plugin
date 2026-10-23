@@ -25,7 +25,7 @@ uses public engine-notification APIs, not audible playback.
 
 ## Reproduce the automated verification
 
-Build the public SDK and plugin using the [README](../README.md#build-and-install).
+Build the public SDK and plugin using the [build and installation guide](BUILDING.md).
 Configure `LOCK_FOOYIN_EXECUTABLE` to enable the real-host CTest entry, then run:
 
 ```sh
