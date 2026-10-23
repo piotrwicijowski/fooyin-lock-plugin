@@ -3,13 +3,16 @@
 A plugin for preventing accidental playback, seeking, playlist, and queue changes
 while keeping fooyin's playlist and library browsing usable.
 
-**Current status: registered-action protection.** The session toggle now suppresses
+**Current status: registered actions and regular-playlist protection.** The session toggle suppresses
 audited transport, seek, playback-order, queue and playlist-edit commands, including
 their registered shortcuts and underlying actions. Unlock restores current
 host-controlled action state. See the [command inventory](docs/registered-actions.md).
-Direct widget gestures, playlist content locks, and browsing side-effect guards
-are planned in [tickets 005–011](.plan/INDEX.md); this development version is not yet
-a complete session lock.
+Regular playlists are temporarily content-locked with durable original-state
+recovery. Targeted guards cover playlist deletion/unlock, rename, tab buttons,
+sorting and drops; see the [playlist protection audit](docs/playlist-protection.md).
+Direct playback/queue/seek gestures and browsing side-effect guards remain in
+[tickets 006–011](.plan/INDEX.md); this development version is not yet a complete
+session lock.
 The approved scope is recorded in the
 [behavior contract](.plan/001-decide-lock-policy.md#approved-behavior-contract).
 
@@ -67,12 +70,15 @@ shows **Unlocked**, transition/recovery status, or **Locked**; only a successful
 completed lock transition is checked. Activate the same action to unlock. Assign
 a shortcut in fooyin's shortcut settings if desired; there is no default binding.
 
-The session starts unlocked after startup recovery. Future guards use the durable
+The session starts unlocked after startup recovery. The playlist guard uses the durable
 `session-lock-recovery.json` journal in fooyin's state directory to restore their
 temporary persistent changes after interruption. If recovery is unresolved, the
 menu shows **Recovery required — Retry** with details in its status/tooltip text
 and the application log. Activating it retries recovery before allowing a new
-lock. Concrete playlist/settings recovery adapters arrive with their guards.
+lock. Pre-existing playlist locks survive unlock and clean shutdown. Playlist
+switcher context menus are suppressed while locked because they contain direct
+mutation commands; selection, scrolling and switching remain available. Autoplaylist
+regeneration continues. Settings recovery adapters arrive with the browsing guard.
 
 ## Real-host smoke test
 
@@ -90,7 +96,10 @@ platform, loads the actual plugin and a separate test driver, reaches the host
 event loop, waits for playlists to populate, and exits through normal application
 shutdown while locked. It verifies core/GUI initialisation, registered-proxy
 lock/unlock/relock transitions, protected proxy/source actions, host refreshes,
-late registration, current-state restoration, and one clean plugin teardown.
+late registration, current-state restoration, concrete playlist locks, targeted
+parent/viewport input filtering, and late/replaced widgets. It then hard-exits a
+second host while locked and restarts the same profile to verify interrupted-session
+recovery and journal acknowledgement.
 It does not need an audio device or
 a display server. The lifecycle test separately exercises actual `QPluginLoader`
 unload with Qt's default unload-prevention hint cleared.
@@ -112,6 +121,7 @@ Debug lifecycle messages are available with
 - [Implementation tickets](.plan/INDEX.md) and [research findings](FINDINGS.md)
 - [Runtime ownership and test extension points](docs/architecture.md)
 - [Protected commands and remaining direct-call routes](docs/registered-actions.md)
+- [Playlist locks, GUI routes and durable recovery](docs/playlist-protection.md)
 - [Build and runtime verification evidence](docs/verification.md)
 
 Keep project includes restricted to fooyin's installed public headers. Add focused

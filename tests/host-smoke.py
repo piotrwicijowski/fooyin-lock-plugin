@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Run the real fooyin host with an isolated profile and check plugin teardown."""
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
@@ -42,33 +43,54 @@ def main():
             "FOOYIN_PLUGIN_PATH": str(plugins),
             "FOOYIN_LOCK_SMOKE_TEST": "1",
         })
-        try:
-            result = subprocess.run([str(args.host.resolve()), "--skip-single"],
-                                    env=env, cwd=home, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True, timeout=30)
-        except subprocess.TimeoutExpired as error:
-            print(error.stdout.decode(errors="replace") if error.stdout else "")
-            raise SystemExit("FAIL: host did not complete clean shutdown within 30 seconds")
-        print(result.stdout, end="")
-        expected = (
+        full_sequence = (
             "fy.sessionlock: Core services acquired",
             "fy.sessionlock: GUI services acquired",
             "Session Lock smoke: host event loop reached",
             "Session Lock smoke: protected proxies/sources, refresh, late registration, and host-state restoration verified",
+            "Session Lock smoke: playlist locks, parent/viewport input ordering, late/replaced widgets, and restoration verified",
             "Session Lock smoke: registered toggle locked, unlocked, and relocked for shutdown",
             "fy.sessionlock: Shutdown complete",
         )
-        if result.returncode:
-            raise SystemExit(f"FAIL: host exited with {result.returncode}")
-        if "QSQLITE driver not loaded" in result.stdout:
-            raise SystemExit("FAIL: the real host's Qt SQLite runtime dependency is missing")
-        for message in expected:
-            if result.stdout.count(message) != 1:
-                raise SystemExit(f"FAIL: expected exactly one occurrence of {message!r}")
-        positions = [result.stdout.index(message) for message in expected]
-        if positions != sorted(positions):
-            raise SystemExit("FAIL: plugin lifecycle messages were out of order")
-        print("PASS: real host initialised Session Lock, entered its event loop, and shut down cleanly")
+        for phase in ("normal", "interrupt", "recover"):
+            env["FOOYIN_LOCK_SMOKE_PHASE"] = phase
+            try:
+                result = subprocess.run([str(args.host.resolve()), "--skip-single"],
+                                        env=env, cwd=home, stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT, text=True, timeout=30)
+            except subprocess.TimeoutExpired as error:
+                print(error.stdout.decode(errors="replace") if error.stdout else "")
+                raise SystemExit(f"FAIL: {phase} host did not finish within 30 seconds")
+            print(result.stdout, end="")
+            if result.returncode:
+                raise SystemExit(f"FAIL: {phase} host exited with {result.returncode}")
+            if "QSQLITE driver not loaded" in result.stdout:
+                raise SystemExit("FAIL: the real host's Qt SQLite runtime dependency is missing")
+            if phase == "interrupt":
+                expected = (*full_sequence[:-1], "Session Lock smoke: interrupting without plugin or host cleanup")
+                if full_sequence[-1] in result.stdout:
+                    raise SystemExit("FAIL: interrupted host unexpectedly ran plugin cleanup")
+            elif phase == "recover":
+                expected = (*full_sequence[:3],
+                            "Session Lock smoke: interrupted playlist locks recovered after restart", full_sequence[-1])
+            else:
+                expected = full_sequence
+            for message in expected:
+                if result.stdout.count(message) != 1:
+                    raise SystemExit(f"FAIL: expected exactly one occurrence of {message!r}")
+            positions = [result.stdout.index(message) for message in expected]
+            if positions != sorted(positions):
+                raise SystemExit("FAIL: plugin lifecycle messages were out of order")
+            journals = list((home / "state").rglob("session-lock-recovery.json"))
+            if len(journals) != 1:
+                raise SystemExit("FAIL: expected one persistent recovery journal")
+            records = json.loads(journals[0].read_text())["records"]
+            if bool(records) != (phase == "interrupt"):
+                raise SystemExit(f"FAIL: incorrect outstanding recovery records after {phase}")
+            if any(record["kind"] != "playlist-lock" or record["original"] != {"type": "bool", "value": False}
+                   or record["temporary"] != {"type": "bool", "value": True} for record in records):
+                raise SystemExit("FAIL: interrupted journal did not preserve typed playlist originals")
+        print("PASS: real host playlist protection, clean shutdown, interruption, and restart recovery verified")
 
 
 if __name__ == "__main__":

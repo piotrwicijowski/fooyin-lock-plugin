@@ -22,6 +22,8 @@ set(LIB_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/fooyin")
 
 add_library(LockRuntime STATIC
     src/actionguard.cpp src/actionguard.h
+    src/playlistguard.cpp src/playlistguard.h
+    src/widgetinputfilter.cpp src/widgetinputfilter.h
     src/lockruntime.cpp src/lockruntime.h
     src/lockcoordinator.cpp src/lockcoordinator.h
     src/recoveryjournal.cpp src/recoveryjournal.h)

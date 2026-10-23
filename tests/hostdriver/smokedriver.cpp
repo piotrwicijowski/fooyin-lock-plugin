@@ -4,13 +4,53 @@
 #include <core/playlist/playlisthandler.h>
 #include <gui/plugins/guiplugin.h>
 #include <gui/guiconstants.h>
+#include <gui/fywidget.h>
+#include <gui/widgetprovider.h>
 #include <utils/actions/actionmanager.h>
 #include <utils/actions/command.h>
 
 #include <QAction>
 #include <QCoreApplication>
+#include <QApplication>
+#include <QAbstractButton>
+#include <QAbstractItemView>
+#include <QContextMenuEvent>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QKeyEvent>
+#include <QHeaderView>
+#include <QJsonObject>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMimeData>
+#include <QMouseEvent>
 #include <QPointer>
+#include <QTabBar>
 #include <QTimer>
+
+#include <cstdlib>
+
+// A receiver filter must never see protected inputs. This verifies ordering
+// against actual host surfaces and viewports, not just a rule function result.
+class InputProbe : public QObject
+{
+public:
+    QEvent::Type watched{QEvent::None};
+    int seen{0};
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        if(event->type() == watched) { ++seen; return true; }
+        return false;
+    }
+    bool reaches(QWidget* widget, QEvent& event)
+    {
+        watched = event.type(); seen = 0;
+        widget->installEventFilter(this);
+        QCoreApplication::sendEvent(widget, &event);
+        widget->removeEventFilter(this);
+        return seen != 0;
+    }
+};
 
 class LockSmokeDriver : public QObject,
                         public Fooyin::Plugin,
@@ -25,6 +65,7 @@ public:
     void initialise(const Fooyin::CorePluginContext& context) override
     {
         if(qEnvironmentVariableIntValue("FOOYIN_LOCK_SMOKE_TEST") == 1 && context.playlistHandler) {
+            m_playlists = context.playlistHandler;
             connect(context.playlistHandler, &Fooyin::PlaylistHandler::playlistsPopulated, this, [this]() {
                 m_playlistsReady = true;
                 quitWhenReady();
@@ -37,6 +78,7 @@ public:
         if(qEnvironmentVariableIntValue("FOOYIN_LOCK_SMOKE_TEST") == 1) {
             m_guiReady = true;
             m_actions = context.actionManager;
+            m_widgets = context.widgetProvider;
             quitWhenReady();
         }
     }
@@ -65,6 +107,28 @@ private:
             QCoreApplication::exit(1);
             return;
         }
+        const bool recoveryRun = qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") == QStringLiteral("recover");
+        auto* normal = m_playlists->playlistByName(QStringLiteral("SessionLock smoke unlocked"));
+        auto* prelocked = m_playlists->playlistByName(QStringLiteral("SessionLock smoke prelocked"));
+        if(recoveryRun) {
+            if(!normal || !prelocked || normal->isLocked() || !prelocked->isLocked()) {
+                fail("startup recovery did not restore exact original playlist locks"); return;
+            }
+            qInfo("Session Lock smoke: interrupted playlist locks recovered after restart");
+            QCoreApplication::quit();
+            return;
+        }
+        normal = m_playlists->createPlaylist(QStringLiteral("SessionLock smoke unlocked"));
+        prelocked = m_playlists->createPlaylist(QStringLiteral("SessionLock smoke prelocked"));
+        if(!normal || !prelocked) { fail("could not create playlist fixtures"); return; }
+        m_playlists->setPlaylistLocked(prelocked->id(), true);
+        m_playlists->savePlaylist(prelocked->id());
+        // Existing surfaces at entry, plus fresh ones created while locked.
+        QPointer<Fooyin::FyWidget> existing{m_widgets->createWidget(QStringLiteral("PlaylistTabs"))};
+        if(!existing) { fail("could not create existing tab widget"); return; }
+        existing->loadLayoutData({{QStringLiteral("ShowAddButton"), true},
+                                  {QStringLiteral("ShowClearButton"), true},
+                                  {QStringLiteral("ShowCloseButton"), true}});
         using namespace Fooyin::Constants;
         auto* playCommand = m_actions->command(Actions::PlayPause);
         auto* orderCommand = m_actions->command(Actions::RepeatTrack);
@@ -88,6 +152,35 @@ private:
             QCoreApplication::exit(1);
             return;
         }
+        if(!normal->isLocked() || !prelocked->isLocked()) { fail("regular playlist locks not applied"); return; }
+        if(!checkInputs(existing)) return;
+        QWidget* content{nullptr};
+        for(auto* candidate : QApplication::allWidgets()) {
+            if(candidate->inherits("Fooyin::PlaylistWidget")) { content = candidate; break; }
+        }
+        if(!content) { fail("could not find the host's nested playlist widget"); return; }
+        if(!checkPlaylistInputs(content)) return;
+        auto* unrelated = m_widgets->createWidget(QStringLiteral("Spacer"));
+        if(!unrelated) { fail("could not create unrelated layout widget"); return; }
+        unrelated->setParent(existing);
+        InputProbe unrelatedProbe;
+        QContextMenuEvent unrelatedMenu{QContextMenuEvent::Mouse, QPoint{2, 2}, QPoint{2, 2}};
+        if(!unrelatedProbe.reaches(unrelated, unrelatedMenu)) {
+            fail("unrelated content inherited tab restrictions"); return;
+        }
+        for(const auto& key : {QStringLiteral("PlaylistTabs"), QStringLiteral("PlaylistManager"),
+                               QStringLiteral("PlaylistOrganiser"), QStringLiteral("PlaylistSwitcher")}) {
+            auto* late = m_widgets->createWidget(key); // Host-parented; explicitly remove to exercise replacement.
+            if(!late || !checkInputs(late)) { fail("late widget input protection failed"); return; }
+            delete late;
+        }
+        // A layout replacement is just another fresh subtree. No event-loop
+        // scan or constructor-time type snapshot may be required for coverage.
+        delete existing;
+        existing = m_widgets->createWidget(QStringLiteral("PlaylistTabs"));
+        if(!checkInputs(existing)) return;
+        auto* added = m_playlists->createPlaylist(QStringLiteral("SessionLock smoke late"));
+        if(!added || !added->isLocked()) { fail("new regular playlist was not synchronously locked"); return; }
         for(auto* protectedCommand : {playCommand, orderCommand, seekCommand, lockCommand}) {
             auto* underlying = protectedCommand->actionForContext(Context::Global);
             if(!underlying || underlying->isEnabled() || protectedCommand->action()->isEnabled()) {
@@ -122,6 +215,10 @@ private:
             QCoreApplication::exit(1);
             return;
         }
+        if(normal->isLocked() || added->isLocked() || !prelocked->isLocked()) {
+            fail("playlist unlock did not restore original states"); return;
+        }
+        if(!checkInputs(existing, false)) return;
         if(source->isEnabled() || playCommand->action()->isEnabled() || !late.isEnabled()
            || !lateCommand->action()->isEnabled()) {
             fail("unlock did not restore current host conditions");
@@ -136,9 +233,85 @@ private:
             }
         }
         qInfo("Session Lock smoke: protected proxies/sources, refresh, late registration, and host-state restoration verified");
+        qInfo("Session Lock smoke: playlist locks, parent/viewport input ordering, late/replaced widgets, and restoration verified");
         action->trigger(); // Also exercise normal host shutdown while locked.
         qInfo("Session Lock smoke: registered toggle locked, unlocked, and relocked for shutdown");
+        delete existing;
+        if(qEnvironmentVariable("FOOYIN_LOCK_SMOKE_PHASE") == QStringLiteral("interrupt")) {
+            qInfo("Session Lock smoke: interrupting without plugin or host cleanup");
+            std::_Exit(0);
+        }
         QCoreApplication::quit();
+    }
+
+    bool checkInputs(QWidget* root, bool locked = true)
+    {
+        if(!root) { fail("could not create audited widget"); return false; }
+        InputProbe probe;
+        // Context-menu delivery to both the root and every view's viewport must
+        // be consumed before the receiver's filter or customContextMenu signal.
+        auto targets = root->findChildren<QWidget*>();
+        targets.push_back(root);
+        int tabBars = 0;
+        for(auto* target : targets) {
+            if(auto* button = qobject_cast<QAbstractButton*>(target);
+               button && root->inherits("Fooyin::PlaylistTabs")
+               && button->objectName() != QStringLiteral("ScrollLeftButton")
+               && button->objectName() != QStringLiteral("ScrollRightButton")) {
+                QMouseEvent press{QEvent::MouseButtonPress, QPointF{2, 2}, QPointF{2, 2},
+                                  Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+                QKeyEvent space{QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier};
+                if(probe.reaches(button, press) == locked || probe.reaches(button, space) == locked) {
+                    fail("tab close/add/clear button escaped protection/restoration"); return false;
+                }
+            }
+            if(target == root || (target->parentWidget() && qobject_cast<QAbstractItemView*>(target->parentWidget())
+                                 && target == qobject_cast<QAbstractItemView*>(target->parentWidget())->viewport())) {
+                QContextMenuEvent context{QContextMenuEvent::Mouse, QPoint{2, 2}, QPoint{2, 2}};
+                if(probe.reaches(target, context) == locked) { fail("switcher context menu escaped filter/restoration"); return false; }
+                QMouseEvent click{QEvent::MouseButtonPress, QPointF{2, 2}, QPointF{2, 2},
+                                  Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+                if(!probe.reaches(target, click)) { fail("ordinary selection was blocked"); return false; }
+                QKeyEvent down{QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier};
+                if(!probe.reaches(target, down)) { fail("keyboard browsing was blocked"); return false; }
+                QMimeData mime;
+                mime.setUrls({QUrl::fromLocalFile(QStringLiteral("/tmp/smoke.flac"))});
+                QDragEnterEvent drag{QPoint{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
+                if(probe.reaches(target, drag) == locked) { fail("drop input escaped filter/restoration"); return false; }
+            }
+            if(auto* tab = qobject_cast<QTabBar*>(target)) {
+                ++tabBars;
+                QMouseEvent middle{QEvent::MouseButtonRelease, QPointF{2, 2}, QPointF{2, 2},
+                                   Qt::MiddleButton, Qt::NoButton, Qt::NoModifier};
+                if(probe.reaches(tab, middle) == locked) { fail("tab middle-close escaped filter/restoration"); return false; }
+                QMouseEvent rename{QEvent::MouseButtonDblClick, QPointF{2, 2}, QPointF{2, 2},
+                                   Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+                if(probe.reaches(tab, rename) == locked) { fail("tab rename escaped filter/restoration"); return false; }
+            }
+        }
+        if(root->inherits("Fooyin::PlaylistTabs") && !tabBars) { fail("audited tab-bar structure changed"); return false; }
+        QLineEdit search;
+        QKeyEvent text{QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, QStringLiteral("x")};
+        QCoreApplication::sendEvent(&search, &text);
+        if(search.text() != QStringLiteral("x")) { fail("unrelated text entry was blocked"); return false; }
+        return true;
+    }
+
+    bool checkPlaylistInputs(QWidget* root)
+    {
+        InputProbe probe;
+        QContextMenuEvent context{QContextMenuEvent::Mouse, QPoint{2, 2}, QPoint{2, 2}};
+        if(!probe.reaches(root, context)) { fail("nested playlist lost its content context menu"); return false; }
+        auto* view = root->findChild<QAbstractItemView*>();
+        auto* header = root->findChild<QHeaderView*>();
+        if(!view || !header) { fail("audited playlist view/header structure changed"); return false; }
+        QMouseEvent select{QEvent::MouseButtonPress, QPointF{2, 2}, QPointF{2, 2},
+                           Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+        if(!probe.reaches(view->viewport(), select)) { fail("playlist selection was blocked"); return false; }
+        QMouseEvent sort{QEvent::MouseButtonRelease, QPointF{2, 2}, QPointF{2, 2},
+                         Qt::LeftButton, Qt::NoButton, Qt::NoModifier};
+        if(probe.reaches(header->viewport(), sort)) { fail("direct header sorting escaped protection"); return false; }
+        return true;
     }
 
     static void fail(const char* detail)
@@ -148,6 +321,8 @@ private:
     }
 
     QPointer<Fooyin::ActionManager> m_actions;
+    QPointer<Fooyin::PlaylistHandler> m_playlists;
+    Fooyin::WidgetProvider* m_widgets{nullptr};
     int m_attempts{0};
     bool m_guiReady{false};
     bool m_playlistsReady{false};

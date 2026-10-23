@@ -89,6 +89,17 @@ bool LockCoordinator::setLocked(bool locked)
     return restored;
 }
 
+void LockCoordinator::failProtection(const QString& error)
+{
+    // A late target could not be protected. Never keep displaying Locked after
+    // that failure; detach guards and restore their write-ahead records now.
+    if(m_state == State::Locked) {
+        setLocked(false);
+        report(QStringLiteral("Session Lock protection failed: %1%2")
+                   .arg(error, m_error.isEmpty() ? QString{} : QStringLiteral("; ") + m_error));
+    }
+}
+
 bool LockCoordinator::restore(QString& error)
 {
     QStringList errors;

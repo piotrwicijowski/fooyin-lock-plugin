@@ -2,6 +2,7 @@
 #include "contexts.h"
 #include "lockcoordinator.h"
 #include "lockruntime.h"
+#include "playlisthost.h"
 
 #include <gui/guiconstants.h>
 #include <utils/actions/actioncontainer.h>
@@ -468,6 +469,7 @@ private Q_SLOTS:
 
     void actionIndicatesCompletedStateAndRemainsUsable()
     {
+        PlaylistHost playlists;
         QTemporaryDir directory;
         SettingsManager settings{directory.filePath(QStringLiteral("settings.ini"))};
         ActionManager actions{&settings};
@@ -479,7 +481,7 @@ private Q_SLOTS:
         {
             LockRuntime runtime{host.journalPath};
             QVERIFY(runtime.coordinator()->addGuard(std::make_unique<Guard>(host)));
-            auto core = coreContext();
+            auto core = playlists.context();
             core.settingsManager = &settings;
             auto gui = guiContext();
             gui.actionManager = &actions;

@@ -12,6 +12,7 @@ namespace Fooyin {
 class ActionManager;
 struct CorePluginContext;
 class CurrentPlaylistController;
+class DbConnectionPool;
 struct GuiPluginContext;
 class PlayerController;
 class PlaylistHandler;
@@ -33,6 +34,7 @@ struct LockServices
     QPointer<ActionManager> actions;
     QPointer<TrackSelectionController> trackSelection;
     QPointer<CurrentPlaylistController> currentPlaylist;
+    std::weak_ptr<DbConnectionPool> database;
 };
 
 // The plugin's single runtime ownership root.

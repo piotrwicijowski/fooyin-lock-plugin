@@ -36,6 +36,7 @@ public:
     bool addGuard(std::unique_ptr<LockGuard> guard);
     bool recover(); // Call only after the host has loaded settings and playlists.
     bool setLocked(bool locked);
+    void failProtection(const QString& error);
     void shutdown();
     [[nodiscard]] State state() const;
     [[nodiscard]] QString lastError() const;

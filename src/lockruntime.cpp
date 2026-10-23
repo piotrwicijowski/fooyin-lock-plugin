@@ -3,6 +3,7 @@
 
 #include "actionguard.h"
 #include "lockcoordinator.h"
+#include "playlistguard.h"
 
 #include <core/player/playercontroller.h>
 #include <core/playlist/playlisthandler.h>
@@ -53,6 +54,7 @@ bool LockRuntime::initialiseCore(const CorePluginContext& context)
     m_services.player    = context.playerController;
     m_services.playlists = context.playlistHandler;
     m_services.settings  = context.settingsManager;
+    m_services.database  = context.dbPool;
     if(m_services.playlists) {
         connect(m_services.playlists, &PlaylistHandler::playlistsPopulated, this, [this]() {
             m_playlistsReady = true;
@@ -73,6 +75,9 @@ bool LockRuntime::initialiseGui(const GuiPluginContext& context)
     m_services.currentPlaylist = context.playlistSelection;
     m_guiInitialised           = true;
     m_coordinator->addGuard(std::make_unique<ActionGuard>(m_services.actions));
+    auto playlists = std::make_unique<PlaylistGuard>(m_services.playlists, m_services.database);
+    connect(playlists.get(), &PlaylistGuard::protectionFailed, m_coordinator.get(), &LockCoordinator::failProtection);
+    m_coordinator->addGuard(std::move(playlists));
     if(m_services.actions) {
         m_toggle = new QAction{this};
         m_toggle->setObjectName(QString::fromLatin1(ToggleActionId));

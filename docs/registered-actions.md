@@ -130,6 +130,11 @@ does not depend on a source `changed` connection surviving a focus switch.
 These are **not protected by ticket 004**, even when their labels resemble entries
 above. The full behavior contract is assembled by tickets 005–010.
 
+Ticket 005 now supplies regular-playlist locks, durable restoration and targeted
+playlist input guards. See the [playlist audit](playlist-protection.md) for the
+completed tab/switcher/manager/organiser routes and autoplaylist policy. The table
+below retains ownership of the broader remaining work.
+
 | Direct path | Required work |
 | --- | --- |
 | Playlist/queue/library double-click, Enter, middle-click and configured activation; queue Play Now/Queue Next/Stop After This context actions | 006/007: targeted discovery and gesture/context-menu filters |

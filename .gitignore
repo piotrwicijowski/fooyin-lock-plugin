@@ -6,3 +6,4 @@ __pycache__/
 FINDINGS.md
 docs/*
 !docs/registered-actions.md
+!docs/playlist-protection.md

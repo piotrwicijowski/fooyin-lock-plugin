@@ -2,6 +2,7 @@
 #include "actionguard.h"
 #include "contexts.h"
 #include "lockruntime.h"
+#include "playlisthost.h"
 
 #include <gui/guiconstants.h>
 #include <utils/actions/actionmanager.h>
@@ -342,13 +343,14 @@ private Q_SLOTS:
     void runtimeInstallsGuardAndShutdownRestores()
     {
         Host host;
+        PlaylistHost playlists;
         QAction source;
         host.actions.registerAction(&source, Constants::Actions::Play);
         {
             LockRuntime runtime{host.directory.filePath(QStringLiteral("runtime.json"))};
             auto gui = guiContext();
             gui.actionManager = &host.actions;
-            QVERIFY(runtime.initialiseCore(coreContext()));
+            QVERIFY(runtime.initialiseCore(playlists.context()));
             QVERIFY(runtime.initialiseGui(gui));
             QVERIFY(runtime.coordinator()->recover());
             auto* toggle = host.actions.command(ToggleActionId)->action();

@@ -14,6 +14,11 @@ target_link_libraries(lock_action_test PRIVATE LockRuntime Qt6::Test)
 add_test(NAME lock.actions COMMAND lock_action_test)
 set_tests_properties(lock.actions PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
 
+add_executable(lock_playlist_test playlistguardtest.cpp)
+target_link_libraries(lock_playlist_test PRIVATE LockRuntime Qt6::Test)
+add_test(NAME lock.playlists COMMAND lock_playlist_test)
+set_tests_properties(lock.playlists PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+
 # A separate, opt-in driver closes the real host via QApplication::quit().
 # It is never part of the installed production plugin.
 add_subdirectory(hostdriver)
@@ -25,5 +30,5 @@ if(LOCK_FOOYIN_EXECUTABLE)
             --host "${LOCK_FOOYIN_EXECUTABLE}"
             --plugin $<TARGET_FILE:Lock>
             --driver $<TARGET_FILE:LockSmokeDriver>)
-    set_tests_properties(lock.host-smoke PROPERTIES TIMEOUT 45)
+    set_tests_properties(lock.host-smoke PROPERTIES TIMEOUT 100)
 endif()
