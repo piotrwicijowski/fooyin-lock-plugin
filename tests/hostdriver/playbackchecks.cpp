@@ -99,15 +99,15 @@ bool checkRoot(QWidget* root, Fooyin::ActionManager* actions)
                              QString::fromLatin1(Fooyin::Constants::Mime::TrackIds), QStringLiteral("text/uri-list")}) {
         QMimeData mime; mime.setData(format, QByteArrayLiteral("test"));
         for(auto action : {Qt::CopyAction, Qt::MoveAction}) {
-            QDragEnterEvent drag{{2, 2}, action, &mime, Qt::LeftButton, Qt::NoModifier};
+            QDragEnterEvent drag{QPoint{2, 2}, action, &mime, Qt::LeftButton, Qt::NoModifier};
             drag.acceptProposedAction();
             if(probe.reaches(view->viewport(), drag) || drag.isAccepted()) return false;
             // QApplication gates drag moves/drops after a rejected enter. Call
             // through a test-only earlier application filter to seed delivery,
             // modelling a drag accepted before lock entry, then ensure
             // each subsequent phase is rejected by the production filter.
-            QDragMoveEvent moveDrop{{2, 2}, action, &mime, Qt::LeftButton, Qt::NoModifier};
-            QDropEvent drop{{2, 2}, action, &mime, Qt::LeftButton, Qt::NoModifier};
+            QDragMoveEvent moveDrop{QPoint{2, 2}, action, &mime, Qt::LeftButton, Qt::NoModifier};
+            QDropEvent drop{QPointF{2, 2}, action, &mime, Qt::LeftButton, Qt::NoModifier};
             DragSeed seed;
             qApp->installEventFilter(&seed);
             QCoreApplication::sendEvent(view->viewport(), &drag);

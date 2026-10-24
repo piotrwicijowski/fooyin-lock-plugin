@@ -133,7 +133,7 @@ bool checkRoot(QWidget* root, Surface expected, bool active)
     QWidget destination{root};
     destination.setAcceptDrops(true);
     QMimeData mime;
-    QDragEnterEvent drag{{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
+    QDragEnterEvent drag{QPoint{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
     drag.acceptProposedAction();
     if(probe.reaches(&destination, drag) == active || (active && drag.isAccepted())) return false;
     // Context-menu policy belongs to each guard, not the infrastructure.

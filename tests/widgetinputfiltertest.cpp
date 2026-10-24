@@ -223,15 +223,15 @@ private Q_SLOTS:
             QVERIFY(enter.isAccepted());
             QCOMPARE(probe.seen, 0);
             QMimeData mime;
-            QDragEnterEvent drag{{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
+            QDragEnterEvent drag{QPoint{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
             drag.acceptProposedAction();
             QCoreApplication::sendEvent(view.viewport(), &drag);
             QVERIFY(!drag.isAccepted());
             QCOMPARE(probe.seen, 0);
             // Qt gates drag-move/drop delivery on a successful drag enter, so
             // their candidate classification is checked directly too.
-            QDragMoveEvent move{{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
-            QDropEvent drop{{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
+            QDragMoveEvent move{QPoint{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
+            QDropEvent drop{QPointF{2, 2}, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier};
             QVERIFY(Filter::isMutationDrop(&move));
             QVERIFY(Filter::isMutationDrop(&drop));
             QEvent leave{QEvent::DragLeave};

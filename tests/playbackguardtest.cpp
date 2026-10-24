@@ -86,7 +86,7 @@ private Q_SLOTS:
             QVERIFY(probe.reaches(view.viewport(), move)); // Selection drag is deliverable.
             view.viewport()->setAcceptDrops(true);
             QMimeData mime;
-            QDragEnterEvent drop{{2, 2}, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier};
+            QDragEnterEvent drop{QPoint{2, 2}, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier};
             drop.acceptProposedAction();
             QVERIFY(!probe.reaches(view.viewport(), drop));
             QVERIFY(!drop.isAccepted());
